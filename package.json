@@ -7,9 +7,15 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:local": "node scripts/pglite-dev-server.mjs",
+    "test:biometric": "node scripts/biometric-e2e.mjs",
+    "test:auth": "node scripts/auth-e2e.mjs",
+    "test:audit": "node scripts/audit-e2e.mjs"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
     "dotenv": "17.3.1",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.52.0",
@@ -19,6 +25,8 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.15",
     "@types/pg": "8.18.0",

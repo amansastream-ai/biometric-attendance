@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { employees, punchRecords } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
+import { describeChanges, recordAudit } from "@/lib/audit";
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const empId = Number(id);
     const [emp] = await db.select().from(employees).where(eq(employees.id, empId));
@@ -25,9 +31,17 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "EMPLOYEE_UPDATE",
+      entityType: "employee",
+      label: "modification d'une fiche salarié",
+    });
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const empId = Number(id);
     const body = await request.json();
+    const [before] = await db.select().from(employees).where(eq(employees.id, empId));
 
     const {
       firstName,
@@ -86,6 +100,31 @@ export async function PUT(
       .where(eq(employees.id, empId))
       .returning();
 
+    if (!updated) {
+      return NextResponse.json({ success: false, error: "Employé introuvable" }, { status: 404 });
+    }
+
+    // On journalise les champs réellement modifiés, sans recopier la fiche entière
+    const changes = describeChanges(
+      before as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>,
+      ["jobTitle", "contractType", "hourlyRate", "weeklyHours", "status", "departmentId", "email", "phone"]
+    );
+
+    await recordAudit({
+      action: "EMPLOYEE_UPDATE",
+      actor: guard.actor,
+      request,
+      entityType: "employee",
+      entityId: empId,
+      summary: `Modification de la fiche de ${updated.firstName} ${updated.lastName} (${updated.employeeCode})${guard.actor.id === empId ? " — sa propre fiche" : ""}.`,
+      details: {
+        champsModifies: Object.keys(changes),
+        changements: changes,
+        empreinteEnrolee: updateData.fingerprintEnrolled ?? undefined,
+      },
+    });
+
     return NextResponse.json({ success: true, employee: updated });
   } catch (error) {
     console.error("PUT /api/employees/[id] error:", error);
@@ -98,6 +137,13 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "EMPLOYEE_DELETE",
+      entityType: "employee",
+      label: "suppression d'un salarié",
+    });
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const empId = Number(id);
 
@@ -108,6 +154,20 @@ export async function DELETE(
     if (!deleted) {
       return NextResponse.json({ success: false, error: "Employé introuvable" }, { status: 404 });
     }
+
+    await recordAudit({
+      action: "EMPLOYEE_DELETE",
+      actor: guard.actor,
+      request,
+      entityType: "employee",
+      entityId: empId,
+      summary: `Suppression définitive de ${deleted.firstName} ${deleted.lastName} (${deleted.employeeCode}) et de son historique de pointage.`,
+      details: {
+        matricule: deleted.employeeCode,
+        poste: deleted.jobTitle,
+        empreinteEnrolee: deleted.fingerprintEnrolled,
+      },
+    });
 
     return NextResponse.json({ success: true, message: "Employé supprimé avec succès" });
   } catch (error) {

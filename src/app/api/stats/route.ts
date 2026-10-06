@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { employees, departments, punchRecords } from "@/db/schema";
 import { gte, lte, and, desc, eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES } from "@/lib/permissions";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const allEmps = await db.select().from(employees);
     const allDepts = await db.select().from(departments);
     const deptMap = new Map(allDepts.map((d) => [d.id, d]));

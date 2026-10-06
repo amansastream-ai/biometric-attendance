@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { punchRecords, employees, departments } from "@/db/schema";
 import { eq, gte, lte, and } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES } from "@/lib/permissions";
 
 interface DailySummary {
   date: string; // YYYY-MM-DD
@@ -29,6 +31,9 @@ interface DailySummary {
 
 export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get("employeeId");
     const departmentId = searchParams.get("departmentId");

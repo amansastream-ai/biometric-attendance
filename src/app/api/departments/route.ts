@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { departments, employees } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const allDepts = await db.select().from(departments).orderBy(departments.name);
     const empCounts = await db
       .select({
@@ -30,6 +36,13 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "DEPARTMENT_CREATE",
+      entityType: "department",
+      label: "création d'un pôle",
+    });
+    if ("error" in guard) return guard.error;
+
     const body = await request.json();
     const {
       name,
@@ -64,6 +77,19 @@ export async function POST(request: NextRequest) {
         managerName: managerName || null,
       })
       .returning();
+
+    await recordAudit({
+      action: "DEPARTMENT_CREATE",
+      actor: guard.actor,
+      request,
+      entityType: "department",
+      entityId: created.id,
+      summary: `Création du pôle ${created.name} (${created.code}).`,
+      details: {
+        horaires: `${created.standardStart}-${created.standardEnd}`,
+        toleranceRetardMinutes: created.gracePeriodMinutes,
+      },
+    });
 
     return NextResponse.json({ success: true, department: created });
   } catch (error) {

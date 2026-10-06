@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import type { Capability, Role } from "@/lib/permissions";
+import { ROLE_LABELS } from "@/lib/permissions";
 import {
   LayoutDashboard,
   Fingerprint,
@@ -10,7 +12,8 @@ import {
   FileSpreadsheet,
   Building2,
   Shield,
-  HelpCircle,
+  UserCog,
+  ScrollText,
 } from "lucide-react";
 
 export type TabType =
@@ -20,13 +23,17 @@ export type TabType =
   | "employees"
   | "timesheets"
   | "reports"
-  | "departments";
+  | "departments"
+  | "users"
+  | "audit";
 
 interface SidebarProps {
   currentTab: TabType;
   onTabChange: (tab: TabType) => void;
   presentCount: number;
   totalEmployees: number;
+  role: Role;
+  capabilities: Record<Capability, boolean>;
 }
 
 export function Sidebar({
@@ -34,47 +41,78 @@ export function Sidebar({
   onTabChange,
   presentCount,
   totalEmployees,
+  role,
+  capabilities,
 }: SidebarProps) {
-  const menuItems: { id: TabType; label: string; icon: React.ElementType; badge?: string }[] = [
+  const allItems: {
+    id: TabType;
+    label: string;
+    icon: React.ElementType;
+    badge?: string;
+    visible: boolean;
+  }[] = [
     {
       id: "dashboard",
-      label: "Tableau de Bord DRH",
+      label: "Tableau de bord DRH",
       icon: LayoutDashboard,
+      visible: capabilities.viewPortal,
     },
     {
       id: "terminal",
-      label: "Borne de Pointage",
+      label: "Borne de pointage",
       icon: Fingerprint,
       badge: "Scanner",
+      visible: capabilities.punchTerminal,
     },
     {
       id: "punches",
-      label: "Pointages & Présences",
+      label: "Pointages & présences",
       icon: Clock,
+      visible: capabilities.viewPortal,
     },
     {
       id: "employees",
-      label: "Salariés & Biométrie",
+      label: "Salariés & biométrie",
       icon: Users,
       badge: String(totalEmployees),
+      visible: capabilities.viewPortal,
     },
     {
       id: "timesheets",
-      label: "Feuilles d'Heures & Paie",
+      label: "Feuilles d'heures & paie",
       icon: CalendarCheck2,
+      visible: capabilities.viewPortal,
     },
     {
       id: "reports",
-      label: "Envoi de Fichiers",
+      label: "Envoi de fichiers",
       icon: FileSpreadsheet,
       badge: "DRH",
+      visible: capabilities.dispatchReports,
     },
     {
       id: "departments",
-      label: "Pôles & Horaires",
+      label: "Pôles & horaires",
       icon: Building2,
+      visible: capabilities.viewPortal,
+    },
+    {
+      id: "users",
+      label: "Comptes & rôles",
+      icon: UserCog,
+      badge: "Admin",
+      visible: capabilities.manageUsers,
+    },
+    {
+      id: "audit",
+      label: "Journal d'audit",
+      icon: ScrollText,
+      badge: "Traçabilité",
+      visible: capabilities.viewAudit,
     },
   ];
+
+  const menuItems = allItems.filter((item) => item.visible);
 
   return (
     <aside className="w-64 bg-slate-900/95 border-r border-slate-800 flex flex-col justify-between p-4 text-slate-300">
@@ -86,9 +124,7 @@ export function Sidebar({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white font-mono">
-              {presentCount}
-            </span>
+            <span className="text-2xl font-bold text-white font-mono">{presentCount}</span>
             <span className="text-xs text-slate-400 font-mono">
               / {totalEmployees} salariés sur site
             </span>
@@ -106,7 +142,7 @@ export function Sidebar({
         {/* Menu Navigation */}
         <nav className="space-y-1">
           <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">
-            Navigation Principale
+            Navigation principale
           </div>
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -123,19 +159,13 @@ export function Sidebar({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon
-                    className={`w-4 h-4 ${
-                      isActive ? "text-cyan-400" : "text-slate-400"
-                    }`}
-                  />
+                  <Icon className={`w-4 h-4 ${isActive ? "text-cyan-400" : "text-slate-400"}`} />
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
                   <span
                     className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-semibold ${
-                      isActive
-                        ? "bg-cyan-400/20 text-cyan-300"
-                        : "bg-slate-800 text-slate-400"
+                      isActive ? "bg-cyan-400/20 text-cyan-300" : "bg-slate-800 text-slate-400"
                     }`}
                   >
                     {item.badge}
@@ -151,10 +181,11 @@ export function Sidebar({
       <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 text-[11px] text-slate-500 space-y-1">
         <div className="flex items-center gap-2 text-slate-400 font-medium">
           <Shield className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Biométrie Sécurisée</span>
+          <span>Accès contrôlé</span>
         </div>
         <p className="text-[10px] leading-tight text-slate-500">
-          Chiffrement des gabarits d&apos;empreinte conforme RGPD & CNIL.
+          Connecté en tant que <strong className="text-slate-400">{ROLE_LABELS[role]}</strong>.
+          Chaque action est rattachée à votre compte.
         </p>
       </div>
     </aside>

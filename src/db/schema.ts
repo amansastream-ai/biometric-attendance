@@ -1,15 +1,38 @@
-import { pgTable, serial, text, integer, numeric, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  // Empreinte scrypt du mot de passe (« scrypt$N$r$p$sel$empreinte »).
+  // Jamais de mot de passe en clair : voir src/lib/auth.ts
   password: text("password").notNull(),
   role: text("role").notNull().default("drh"), // 'admin' | 'drh' | 'manager' | 'kiosk'
   departmentId: integer("department_id"),
   avatarUrl: text("avatar_url"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Sessions authentifiées : le jeton du cookie n'est stocké que haché, il peut
+ * donc être révoqué (déconnexion, changement de mot de passe, désactivation).
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    userAgent: text("user_agent"),
+    ipAddress: text("ip_address"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("sessions_user_idx").on(table.userId)]
+);
 
 export const departments = pgTable("departments", {
   id: serial("id").primaryKey(),
@@ -49,14 +72,80 @@ export const employees = pgTable("employees", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+/**
+ * Empreintes réellement enrôlées sur un capteur biométrique (WebAuthn / FIDO2).
+ *
+ * La clé publique est fournie par le capteur (Secure Enclave, TPM, capteur
+ * d'empreinte Android/Windows Hello...). Elle permet au serveur de **vérifier
+ * cryptographiquement** que c'est bien le doigt du salarié qui a été présenté
+ * au moment du pointage : le gabarit biométrique ne quitte jamais le capteur.
+ */
+export const biometricCredentials = pgTable(
+  "biometric_credentials",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id").notNull(),
+    // Identifiant opaque du credential (base64url) renvoyé par le capteur
+    credentialId: text("credential_id").notNull().unique(),
+    // Clé publique COSE du capteur (base64url) — sert à vérifier les signatures
+    publicKey: text("public_key").notNull(),
+    counter: integer("counter").notNull().default(0),
+    transports: text("transports").notNull().default(""),
+    deviceType: text("device_type").notNull().default("singleDevice"), // singleDevice | multiDevice
+    backedUp: boolean("backed_up").notNull().default(false),
+    aaguid: text("aaguid"),
+    finger: text("finger").notNull().default("Pouce Droit"),
+    label: text("label"), // ex: "MacBook de Fatou", "Borne entrée A"
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("biometric_credentials_employee_idx").on(table.employeeId)]
+);
+
+/**
+ * Journal d'audit : trace inaltérable des actions sensibles.
+ *
+ * Aucune route ne permet de modifier ou supprimer une entrée (pas d'API de
+ * mise à jour) : c'est ce qui donne sa valeur à la piste d'audit en cas de
+ * contrôle RGPD ou de litige sur un pointage. Aucun secret (mot de passe, PIN,
+ * jeton) n'y est jamais écrit : voir `redactDetails()` dans src/lib/audit.ts.
+ */
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: serial("id").primaryKey(),
+    // Auteur (null pour une action système ou une tentative anonyme)
+    actorId: integer("actor_id"),
+    actorName: text("actor_name").notNull().default("Système"),
+    actorRole: text("actor_role"),
+    // Code technique de l'action, ex. 'AUTH_LOGIN', 'EMPLOYEE_DELETE'
+    action: text("action").notNull(),
+    entityType: text("entity_type"), // 'employee' | 'user' | 'punch' | 'biometric_credential'...
+    entityId: text("entity_id"),
+    outcome: text("outcome").notNull().default("SUCCESS"), // SUCCESS | DENIED | FAILED
+    // Phrase lisible en français, affichée telle quelle dans l'interface
+    summary: text("summary").notNull(),
+    details: text("details"), // JSON sérialisé, expurgé de tout secret
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("audit_logs_created_idx").on(table.createdAt),
+    index("audit_logs_actor_idx").on(table.actorId),
+    index("audit_logs_action_idx").on(table.action),
+  ]
+);
+
 export const punchRecords = pgTable("punch_records", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull(),
   punchTime: timestamp("punch_time", { withTimezone: true }).notNull().defaultNow(),
   type: text("type").notNull(), // 'IN' (Arrivée), 'OUT' (Départ), 'BREAK_START' (Pause), 'BREAK_END' (Reprise)
-  punchMethod: text("punch_method").notNull().default("FINGERPRINT"), // 'FINGERPRINT', 'WEBAUTHN', 'KIOSK_PAD', 'MANUAL_DRH', 'PIN_FALLBACK'
-  fingerMatched: text("finger_matched").default("Pouce Droit"),
-  biometricConfidence: integer("biometric_confidence").default(98),
+  punchMethod: text("punch_method").notNull().default("MANUAL_DRH"), // 'WEBAUTHN' (capteur vérifié), 'PIN_FALLBACK', 'KIOSK_PAD', 'MANUAL_DRH', 'DEMO_SEED'
+  fingerMatched: text("finger_matched"),
+  biometricConfidence: integer("biometric_confidence"),
   kioskLocation: text("kiosk_location").notNull().default("Borne Entrée Principale"),
   isManual: boolean("is_manual").notNull().default(false),
   manualReason: text("manual_reason"),
