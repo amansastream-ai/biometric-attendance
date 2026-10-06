@@ -4,13 +4,18 @@ import { departments, employees } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireActor } from "@/lib/auth";
 import { WRITE_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const guard = await requireActor(request, WRITE_ROLES);
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "DEPARTMENT_UPDATE",
+      entityType: "department",
+      label: "modification d'un pôle ou de ses horaires",
+    });
     if ("error" in guard) return guard.error;
 
     const { id } = await context.params;
@@ -37,6 +42,19 @@ export async function PUT(
       return NextResponse.json({ success: false, error: "Département introuvable" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "DEPARTMENT_UPDATE",
+      actor: guard.actor,
+      request,
+      entityType: "department",
+      entityId: deptId,
+      summary: `Modification du pôle ${updated.name} (${updated.code}).`,
+      details: {
+        horaires: `${updated.standardStart}-${updated.standardEnd}`,
+        toleranceRetardMinutes: updated.gracePeriodMinutes,
+      },
+    });
+
     return NextResponse.json({ success: true, department: updated });
   } catch (error) {
     console.error("PUT /api/departments/[id] error:", error);
@@ -49,7 +67,11 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const guard = await requireActor(request, WRITE_ROLES);
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "DEPARTMENT_DELETE",
+      entityType: "department",
+      label: "suppression d'un pôle",
+    });
     if ("error" in guard) return guard.error;
 
     const { id } = await context.params;
@@ -71,6 +93,16 @@ export async function DELETE(
     if (!deleted) {
       return NextResponse.json({ success: false, error: "Département introuvable" }, { status: 404 });
     }
+
+    await recordAudit({
+      action: "DEPARTMENT_DELETE",
+      actor: guard.actor,
+      request,
+      entityType: "department",
+      entityId: deptId,
+      summary: `Suppression du pôle ${deleted.name} (${deleted.code}).`,
+      details: { horaires: `${deleted.standardStart}-${deleted.standardEnd}` },
+    });
 
     return NextResponse.json({ success: true, message: "Département supprimé" });
   } catch (error) {

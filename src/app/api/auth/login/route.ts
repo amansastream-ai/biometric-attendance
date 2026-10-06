@@ -13,6 +13,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,14 @@ export async function POST(request: NextRequest) {
 
     const throttle = checkLoginThrottle(throttleKey);
     if (throttle.blocked) {
+      await recordAudit({
+        action: "AUTH_LOGIN_BLOCKED",
+        outcome: "DENIED",
+        request,
+        entityType: "user",
+        summary: `Connexion bloquée pour ${email} (trop de tentatives échouées).`,
+        details: { email, retryInMinutes: throttle.retryInMinutes },
+      });
       return NextResponse.json(
         {
           success: false,
@@ -65,16 +74,41 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       recordLoginFailure(throttleKey);
+      await recordAudit({
+        action: "AUTH_LOGIN_FAILED",
+        outcome: "FAILED",
+        request,
+        entityType: "user",
+        summary: `Échec de connexion : compte inconnu (${email}).`,
+        details: { email, motif: "compte inconnu" },
+      });
       return invalid;
     }
 
     const verification = await verifyPassword(password, user.password);
     if (!verification.ok) {
       recordLoginFailure(throttleKey);
+      await recordAudit({
+        action: "AUTH_LOGIN_FAILED",
+        outcome: "FAILED",
+        request,
+        entityType: "user",
+        entityId: user.id,
+        summary: `Échec de connexion : mot de passe incorrect pour ${user.name}.`,
+        details: { email, motif: "mot de passe incorrect" },
+      });
       return invalid;
     }
 
     if (!user.isActive) {
+      await recordAudit({
+        action: "AUTH_LOGIN_FAILED",
+        outcome: "DENIED",
+        request,
+        entityType: "user",
+        entityId: user.id,
+        summary: `Connexion refusée : compte désactivé (${user.name}).`,
+      });
       return NextResponse.json(
         { success: false, error: "Ce compte est désactivé. Contactez un administrateur." },
         { status: 403 }
@@ -92,6 +126,23 @@ export async function POST(request: NextRequest) {
     const { token, expiresAt } = await createSession(user.id, request);
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
     clearLoginFailures(throttleKey);
+
+    await recordAudit({
+      action: "AUTH_LOGIN",
+      actor: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role as Role,
+        avatarUrl: user.avatarUrl,
+        departmentId: user.departmentId,
+      },
+      request,
+      entityType: "user",
+      entityId: user.id,
+      summary: `Connexion réussie de ${user.name} (${ROLE_LABELS[user.role as Role] ?? user.role}).`,
+      details: { migrationMotDePasse: verification.needsRehash || undefined },
+    });
 
     const response = NextResponse.json({
       success: true,

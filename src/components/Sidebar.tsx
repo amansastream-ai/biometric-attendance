@@ -13,6 +13,7 @@ import {
   Building2,
   Shield,
   UserCog,
+  ScrollText,
 } from "lucide-react";
 
 export type TabType =
@@ -23,7 +24,8 @@ export type TabType =
   | "timesheets"
   | "reports"
   | "departments"
-  | "users";
+  | "users"
+  | "audit";
 
 interface SidebarProps {
   currentTab: TabType;
@@ -100,6 +102,13 @@ export function Sidebar({
       icon: UserCog,
       badge: "Admin",
       visible: capabilities.manageUsers,
+    },
+    {
+      id: "audit",
+      label: "Journal d'audit",
+      icon: ScrollText,
+      badge: "Traçabilité",
+      visible: capabilities.viewAudit,
     },
   ];
 

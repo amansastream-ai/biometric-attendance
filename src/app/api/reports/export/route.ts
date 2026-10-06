@@ -4,11 +4,16 @@ import { employees, departments, punchRecords } from "@/db/schema";
 import { gte, lte, and, eq } from "drizzle-orm";
 import { requireActor } from "@/lib/auth";
 import { PORTAL_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
     // Les exports contiennent des données de paie : réservés aux rôles RH
-    const guard = await requireActor(request, PORTAL_ROLES);
+    const guard = await requireActor(request, PORTAL_ROLES, {
+      action: "DATA_EXPORT",
+      entityType: "report",
+      label: "export des données de paie",
+    });
     if ("error" in guard) return guard.error;
 
     const { searchParams } = new URL(request.url);
@@ -175,6 +180,23 @@ export async function GET(request: NextRequest) {
     const csvContent = "\uFEFF" + rows.map((r) => r.map((c) => `"${(c || "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
 
     const filename = `presences-heures-pointage-${startDate.toISOString().split("T")[0]}_au_${endDate.toISOString().split("T")[0]}.csv`;
+
+    // Un export contient des données de paie : la sortie de données est tracée
+    await recordAudit({
+      action: "DATA_EXPORT",
+      actor: guard.actor,
+      request,
+      entityType: "report",
+      summary: `Export CSV des présences et heures (${startDate.toISOString().split("T")[0]} → ${
+        endDate.toISOString().split("T")[0]
+      }) : ${rows.length} ligne(s), données de paie incluses.`,
+      details: {
+        fichier: filename,
+        periode: period,
+        lignes: rows.length,
+        departementId: searchParams.get("departmentId") ?? null,
+      },
+    });
 
     return new NextResponse(csvContent, {
       status: 200,

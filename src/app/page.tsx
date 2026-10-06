@@ -12,6 +12,7 @@ import { TimesheetsTab } from "@/components/tabs/TimesheetsTab";
 import { ReportsTab } from "@/components/tabs/ReportsTab";
 import { DepartmentsTab } from "@/components/tabs/DepartmentsTab";
 import { UsersTab } from "@/components/tabs/UsersTab";
+import { AuditTab } from "@/components/tabs/AuditTab";
 
 import { LoginScreen } from "@/components/LoginScreen";
 import { PasswordModal } from "@/components/PasswordModal";
@@ -545,6 +546,10 @@ export default function HomePage() {
                   employees={employees}
                   onNotify={showToast}
                 />
+              )}
+
+              {currentTab === "audit" && can("viewAudit") && (
+                <AuditTab onNotify={showToast} />
               )}
             </main>
           </div>

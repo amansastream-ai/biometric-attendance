@@ -4,6 +4,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { sessions, users } from "@/db/schema";
 import { and, eq, gt, lt } from "drizzle-orm";
+import { recordAudit, type AuditAction } from "@/lib/audit";
 import type { Role } from "@/lib/permissions";
 
 /**
@@ -236,19 +237,42 @@ export function sameOrigin(request: NextRequest): boolean {
   }
 }
 
+export type AuditContext = {
+  action: AuditAction;
+  entityType?: string;
+  entityId?: string | number | null;
+  /** Description de l'opération tentée, affichée dans le journal. */
+  label?: string;
+};
+
 /**
  * Garde d'accès : renvoie soit l'auteur de la requête, soit la réponse d'erreur
  * à retourner telle quelle.
  *
- *   const guard = await requireActor(request, ["admin", "drh"]);
+ *   const guard = await requireActor(request, ["admin", "drh"], auditContext);
  *   if ("error" in guard) return guard.error;
  *   // guard.actor est fiable : identité issue de la session serveur
+ *
+ * Un refus (403) est journalisé lorsque le contexte d'audit est fourni :
+ * les tentatives hors périmètre apparaissent dans le journal d'audit.
  */
 export async function requireActor(
   request: NextRequest,
-  roles?: Role[]
+  roles?: Role[],
+  audit?: AuditContext
 ): Promise<{ actor: Actor } | { error: Response }> {
   if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method) && !sameOrigin(request)) {
+    if (audit) {
+      await recordAudit({
+        action: "ACCESS_DENIED",
+        outcome: "DENIED",
+        request,
+        entityType: audit.entityType,
+        entityId: audit.entityId,
+        summary: `Requête refusée : origine non autorisée (${audit.label ?? audit.action}).`,
+        details: { origine: request.headers.get("origin"), action: audit.action },
+      });
+    }
     return { error: jsonError("Requête refusée : origine non autorisée.", 403) };
   }
 
@@ -263,6 +287,20 @@ export async function requireActor(
   }
 
   if (roles && !roles.includes(actor.role)) {
+    if (audit) {
+      await recordAudit({
+        action: "ACCESS_DENIED",
+        outcome: "DENIED",
+        actor,
+        request,
+        entityType: audit.entityType,
+        entityId: audit.entityId,
+        summary: `Accès refusé à ${actor.name} (rôle ${actor.role}) : tentative de ${
+          audit.label ?? audit.action
+        }.`,
+        details: { action: audit.action, role: actor.role, rolesAttendus: roles },
+      });
+    }
     return {
       error: jsonError(
         "Accès refusé : votre rôle ne permet pas cette action.",

@@ -103,6 +103,41 @@ export const biometricCredentials = pgTable(
   (table) => [index("biometric_credentials_employee_idx").on(table.employeeId)]
 );
 
+/**
+ * Journal d'audit : trace inaltérable des actions sensibles.
+ *
+ * Aucune route ne permet de modifier ou supprimer une entrée (pas d'API de
+ * mise à jour) : c'est ce qui donne sa valeur à la piste d'audit en cas de
+ * contrôle RGPD ou de litige sur un pointage. Aucun secret (mot de passe, PIN,
+ * jeton) n'y est jamais écrit : voir `redactDetails()` dans src/lib/audit.ts.
+ */
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: serial("id").primaryKey(),
+    // Auteur (null pour une action système ou une tentative anonyme)
+    actorId: integer("actor_id"),
+    actorName: text("actor_name").notNull().default("Système"),
+    actorRole: text("actor_role"),
+    // Code technique de l'action, ex. 'AUTH_LOGIN', 'EMPLOYEE_DELETE'
+    action: text("action").notNull(),
+    entityType: text("entity_type"), // 'employee' | 'user' | 'punch' | 'biometric_credential'...
+    entityId: text("entity_id"),
+    outcome: text("outcome").notNull().default("SUCCESS"), // SUCCESS | DENIED | FAILED
+    // Phrase lisible en français, affichée telle quelle dans l'interface
+    summary: text("summary").notNull(),
+    details: text("details"), // JSON sérialisé, expurgé de tout secret
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("audit_logs_created_idx").on(table.createdAt),
+    index("audit_logs_actor_idx").on(table.actorId),
+    index("audit_logs_action_idx").on(table.action),
+  ]
+);
+
 export const punchRecords = pgTable("punch_records", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull(),

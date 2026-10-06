@@ -7,6 +7,7 @@ import { biometricCredentials, employees } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { clearChallengeCookie, getRpConfig, readChallengeCookie } from "@/lib/webauthn";
 import { requireActor } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,11 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: NextRequest) {
   try {
-    const guard = await requireActor(request, ["admin", "drh"]);
+    const guard = await requireActor(request, ["admin", "drh"], {
+      action: "BIOMETRIC_ENROLL",
+      entityType: "biometric_credential",
+      label: "enrôlement d'une empreinte",
+    });
     if ("error" in guard) return guard.error;
 
     const body = await request.json().catch(() => ({}));
@@ -122,6 +127,22 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(employees.id, employeeId))
       .returning();
+
+    await recordAudit({
+      action: "BIOMETRIC_ENROLL",
+      actor: guard.actor,
+      request,
+      entityType: "biometric_credential",
+      entityId: stored.id,
+      summary: `Empreinte (${finger}) enrôlée pour ${employee.firstName} ${employee.lastName} (${employee.employeeCode}) après vérification de l'attestation du capteur.`,
+      details: {
+        doigt: finger,
+        appareil: label ?? null,
+        typeAppareil: credentialDeviceType,
+        sauvegardeCle: credentialBackedUp,
+        aaguid: typeof aaguid === "string" ? aaguid : null,
+      },
+    });
 
     const result = NextResponse.json({
       success: true,

@@ -9,6 +9,7 @@ import {
   requireActor,
 } from "@/lib/auth";
 import { ROLE_LABELS, USER_MANAGER_ROLES, type Role } from "@/lib/permissions";
+import { describeChanges, recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,11 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const guard = await requireActor(request, USER_MANAGER_ROLES);
+    const guard = await requireActor(request, USER_MANAGER_ROLES, {
+      action: "USER_UPDATE",
+      entityType: "user",
+      label: "modification d'un compte utilisateur",
+    });
     if ("error" in guard) return guard.error;
     const { actor } = guard;
 
@@ -136,6 +141,34 @@ export async function PUT(
       await destroyUserSessions(userId);
     }
 
+    const changes = describeChanges(
+      target as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>,
+      ["name", "role", "isActive", "departmentId"]
+    );
+
+    await recordAudit({
+      action: "USER_UPDATE",
+      actor,
+      request,
+      entityType: "user",
+      entityId: userId,
+      summary: `Modification du compte ${updated.name} (${updated.email}) : ${
+        Object.keys(changes).length > 0
+          ? Object.entries(changes)
+              .map(([field, values]) => `${field} ${String(values.avant)} → ${String(values.apres)}`)
+              .join(", ")
+          : "identité"
+      }${body?.password ? " • mot de passe réinitialisé" : ""}${
+        revokeSessions ? " • sessions révoquées" : ""
+      }.`,
+      details: {
+        changements: changes,
+        motDePasseReinitialise: Boolean(body?.password),
+        sessionsRevoquees: revokeSessions,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       user: {
@@ -163,7 +196,11 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const guard = await requireActor(request, ["admin"]);
+    const guard = await requireActor(request, ["admin"], {
+      action: "USER_DELETE",
+      entityType: "user",
+      label: "suppression d'un compte utilisateur",
+    });
     if ("error" in guard) return guard.error;
     const { actor } = guard;
 
@@ -190,6 +227,16 @@ export async function DELETE(
 
     await destroyUserSessions(userId);
     await db.delete(users).where(eq(users.id, userId));
+
+    await recordAudit({
+      action: "USER_DELETE",
+      actor,
+      request,
+      entityType: "user",
+      entityId: userId,
+      summary: `Suppression du compte ${target.name} (${target.email}, rôle ${ROLE_LABELS[target.role as Role] ?? target.role}) et révocation de ses sessions.`,
+      details: { email: target.email, role: target.role },
+    });
 
     return NextResponse.json({ success: true, message: "Compte supprimé." });
   } catch (error) {

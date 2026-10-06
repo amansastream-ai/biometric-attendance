@@ -200,19 +200,11 @@ export async function punchWithPin(params: {
   requestedType?: "IN" | "OUT" | "BREAK_START" | "BREAK_END" | null;
   kioskLocation?: string;
 }): Promise<{ punch: PunchRecord; employee: Employee; message: string }> {
-  const employeesPayload = await fetch("/api/employees").then(readJson);
-  const list = (employeesPayload.employees as Employee[] | undefined) ?? [];
-  const target = list.find(
-    (employee) =>
-      employee.employeeCode.toLowerCase() === params.employeeCode.trim().toLowerCase()
-  );
-
-  if (!target) {
-    throw new Error("Code salarié inconnu.");
-  }
-
+  // La borne n'a pas accès à l'annuaire des salariés : c'est le serveur qui
+  // résout le code salarié, ce qui évite d'exposer la liste complète du
+  // personnel sur un poste en libre accès.
   const data = await postJson("/api/punch", {
-    employeeId: target.id,
+    employeeCode: params.employeeCode.trim(),
     // Sans type explicite, le serveur déduit arrivée/pause/départ de la journée
     type: params.requestedType ?? undefined,
     punchMethod: "PIN_FALLBACK",

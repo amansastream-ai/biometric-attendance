@@ -16,6 +16,8 @@ import {
 } from "@/lib/punching";
 import { requireActor } from "@/lib/auth";
 import { TERMINAL_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
+import { PUNCH_TYPE_LABELS } from "@/lib/punch-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,7 @@ export async function POST(request: NextRequest) {
     // La borne doit être ouverte par un compte autorisé (kiosque inclus)
     const guard = await requireActor(request, TERMINAL_ROLES);
     if ("error" in guard) return guard.error;
+    const actor = guard.actor;
 
     const body = await request.json().catch(() => ({}));
     const response = body?.response as AuthenticationResponseJSON | undefined;
@@ -89,6 +92,21 @@ export async function POST(request: NextRequest) {
 
     // Contrôle nominatif : l'empreinte présentée doit être celle du salarié annoncé
     if (challenge.employeeId && challenge.employeeId !== credential.employeeId) {
+      // Tentative de pointage pour un collègue (ou erreur de contrôle) : tracée
+      await recordAudit({
+        action: "BIOMETRIC_REJECTED",
+        outcome: "DENIED",
+        actor,
+        request,
+        entityType: "employee",
+        entityId: challenge.employeeId,
+        summary: `Pointage refusé : une empreinte n'appartenant pas au salarié n°${challenge.employeeId} a été présentée en contrôle nominatif.`,
+        details: {
+          salarieAttendu: challenge.employeeId,
+          proprietaireReel: credential.employeeId,
+          borne: kioskLocation,
+        },
+      });
       return errorResponse(
         "L'empreinte présentée ne correspond pas au salarié sélectionné. Pointage refusé.",
         403,
@@ -139,6 +157,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!verification.verified) {
+      await recordAudit({
+        action: "BIOMETRIC_REJECTED",
+        outcome: "DENIED",
+        actor,
+        request,
+        entityType: "biometric_credential",
+        entityId: credential.id,
+        summary: `Pointage refusé : signature biométrique invalide (credential ${credential.credentialId.slice(0, 10)}…).`,
+        details: { borne: kioskLocation, motif: "signature non vérifiée" },
+      });
       return errorResponse(
         "Signature biométrique invalide : pointage refusé.",
         401,
@@ -194,6 +222,26 @@ export async function POST(request: NextRequest) {
     if (!created) {
       return errorResponse("Enregistrement du pointage impossible.", 500, request);
     }
+
+    await recordAudit({
+      action: "BIOMETRIC_PUNCH",
+      actor,
+      request,
+      entityType: "punch",
+      entityId: created.punch.id,
+      summary: `Pointage par empreinte vérifiée : ${employee.firstName} ${employee.lastName} — ${
+        PUNCH_TYPE_LABELS[created.punch.type as keyof typeof PUNCH_TYPE_LABELS] ?? created.punch.type
+      }${created.punch.status === "LATE" ? " (retard)" : ""}.`,
+      details: {
+        doigt: credential.finger,
+        credential: `${credential.credentialId.slice(0, 10)}…`,
+        typeAppareil: credentialDeviceType,
+        compteur: newCounter,
+        borne: kioskLocation,
+        verificationUtilisateur: true,
+        typeDeduit: !requestedType,
+      },
+    });
 
     const result = NextResponse.json({
       success: true,

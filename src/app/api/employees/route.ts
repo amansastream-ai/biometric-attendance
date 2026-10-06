@@ -4,6 +4,7 @@ import { employees, departments, punchRecords } from "@/db/schema";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { requireActor } from "@/lib/auth";
 import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
@@ -116,7 +117,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const guard = await requireActor(request, WRITE_ROLES);
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "EMPLOYEE_CREATE",
+      entityType: "employee",
+      label: "création d'un salarié",
+    });
     if ("error" in guard) return guard.error;
 
     const body = await request.json();
@@ -172,6 +177,21 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
       })
       .returning();
+
+    await recordAudit({
+      action: "EMPLOYEE_CREATE",
+      actor: guard.actor,
+      request,
+      entityType: "employee",
+      entityId: newEmp.id,
+      summary: `Création du salarié ${newEmp.firstName} ${newEmp.lastName} (${newEmp.employeeCode}).`,
+      details: {
+        matricule: newEmp.employeeCode,
+        poste: newEmp.jobTitle,
+        departementId: newEmp.departmentId,
+        typeContrat: newEmp.contractType,
+      },
+    });
 
     return NextResponse.json({ success: true, employee: newEmp });
   } catch (error) {

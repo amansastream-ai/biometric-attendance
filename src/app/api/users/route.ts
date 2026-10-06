@@ -4,6 +4,7 @@ import { sessions, users } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { hashPassword, isStrongEnough, requireActor } from "@/lib/auth";
 import { ROLE_LABELS, USER_MANAGER_ROLES, type Role } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,11 @@ export async function GET(request: NextRequest) {
 /** Création d'un compte. Seul un administrateur peut créer un administrateur. */
 export async function POST(request: NextRequest) {
   try {
-    const guard = await requireActor(request, USER_MANAGER_ROLES);
+    const guard = await requireActor(request, USER_MANAGER_ROLES, {
+      action: "USER_CREATE",
+      entityType: "user",
+      label: "création d'un compte utilisateur",
+    });
     if ("error" in guard) return guard.error;
 
     const body = await request.json().catch(() => ({}));
@@ -106,6 +111,21 @@ export async function POST(request: NextRequest) {
         isActive: true,
       })
       .returning();
+
+    await recordAudit({
+      action: "USER_CREATE",
+      actor: guard.actor,
+      request,
+      entityType: "user",
+      entityId: created.id,
+      summary: `Création du compte ${created.name} (${created.email}) avec le rôle ${ROLE_LABELS[created.role as Role] ?? created.role}.`,
+      details: {
+        email: created.email,
+        role: created.role,
+        salarieRattacheId: created.departmentId,
+        // Le mot de passe n'est jamais journalisé (voir redactDetails)
+      },
+    });
 
     return NextResponse.json({
       success: true,

@@ -22,6 +22,7 @@ export type Capability =
   | "manageDepartments" // créer / modifier des pôles et horaires
   | "dispatchReports" // envoyer des fichiers de présence
   | "manageUsers" // gérer les comptes et les rôles
+  | "viewAudit" // consulter le journal d'audit
   | "promoteAdmin"; // attribuer le rôle admin
 
 const MATRIX: Record<Role, Record<Capability, boolean>> = {
@@ -35,6 +36,7 @@ const MATRIX: Record<Role, Record<Capability, boolean>> = {
     manageDepartments: true,
     dispatchReports: true,
     manageUsers: true,
+    viewAudit: true,
     promoteAdmin: true,
   },
   drh: {
@@ -47,6 +49,8 @@ const MATRIX: Record<Role, Record<Capability, boolean>> = {
     manageDepartments: true,
     dispatchReports: true,
     manageUsers: true,
+    // Le journal d'audit est réservé à l'administration et à la DRH
+    viewAudit: true,
     // Seul un administrateur peut créer un autre administrateur
     promoteAdmin: false,
   },
@@ -60,6 +64,7 @@ const MATRIX: Record<Role, Record<Capability, boolean>> = {
     manageDepartments: false,
     dispatchReports: false,
     manageUsers: false,
+    viewAudit: false,
     promoteAdmin: false,
   },
   kiosk: {
@@ -72,6 +77,7 @@ const MATRIX: Record<Role, Record<Capability, boolean>> = {
     manageDepartments: false,
     dispatchReports: false,
     manageUsers: false,
+    viewAudit: false,
     promoteAdmin: false,
   },
 };
@@ -85,6 +91,8 @@ export function can(role: Role | undefined | null, capability: Capability): bool
 export const PORTAL_ROLES: Role[] = ["admin", "drh", "manager"];
 /** Rôles autorisés à écrire les données RH. */
 export const WRITE_ROLES: Role[] = ["admin", "drh"];
+/** Rôles autorisés à lire le journal d'audit. */
+export const AUDIT_ROLES: Role[] = ["admin", "drh"];
 /** Rôles autorisés à gérer les comptes utilisateurs. */
 export const USER_MANAGER_ROLES: Role[] = ["admin", "drh"];
 /** Rôles autorisés à utiliser la borne de pointage. */

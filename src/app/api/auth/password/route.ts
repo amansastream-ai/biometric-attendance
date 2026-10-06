@@ -12,6 +12,7 @@ import {
   createSession,
   verifyPassword,
 } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,15 @@ export async function PUT(request: NextRequest) {
 
     const verification = await verifyPassword(currentPassword, user.password);
     if (!verification.ok) {
+      await recordAudit({
+        action: "AUTH_PASSWORD_CHANGE",
+        outcome: "FAILED",
+        actor,
+        request,
+        entityType: "user",
+        entityId: actor.id,
+        summary: `Échec de changement de mot de passe : mot de passe actuel incorrect (${actor.name}).`,
+      });
       return NextResponse.json(
         { success: false, error: "Mot de passe actuel incorrect." },
         { status: 401 }
@@ -62,6 +72,17 @@ export async function PUT(request: NextRequest) {
 
     // Révoque toutes les sessions de l'utilisateur…
     await destroyUserSessions(actor.id);
+
+    await recordAudit({
+      action: "AUTH_PASSWORD_CHANGE",
+      actor,
+      request,
+      entityType: "user",
+      entityId: actor.id,
+      summary: `Mot de passe modifié par ${actor.name} ; toutes ses autres sessions ont été révoquées.`,
+      // On ne journalise jamais le mot de passe, même haché : seulement sa longueur
+      details: { longueurMotDePasse: newPassword.length },
+    });
 
     // …puis ré-ouvre une session propre pour l'appareil courant
     const { token, expiresAt } = await createSession(actor.id, request);

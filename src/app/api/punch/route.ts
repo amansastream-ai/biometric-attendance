@@ -11,8 +11,10 @@ import {
   type PunchMethod,
   type PunchType,
 } from "@/lib/punching";
+import { PUNCH_TYPE_LABELS } from "@/lib/punch-labels";
 import { requireActor } from "@/lib/auth";
-import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
+import { PORTAL_ROLES, TERMINAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 const PUNCH_TYPES: PunchType[] = ["IN", "OUT", "BREAK_START", "BREAK_END"];
 
@@ -125,15 +127,10 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Seuls les rôles RH peuvent saisir ou régulariser un pointage non
-    // biométrique (l'empreinte passe par /api/biometrics/authenticate/verify).
-    const guard = await requireActor(request, WRITE_ROLES);
-    if ("error" in guard) return guard.error;
-    const actor = guard.actor;
-
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const {
       employeeId,
+      employeeCode,
       type,
       punchMethod = "MANUAL_DRH",
       kioskLocation = "Borne Entrée Principale",
@@ -146,7 +143,26 @@ export async function POST(request: NextRequest) {
 
     const isPinFallback = punchMethod === "PIN_FALLBACK";
 
-    if (!employeeId || (!type && !isPinFallback)) {
+    // La borne de pointage peut utiliser le repli code + PIN (c'est son rôle :
+    // les salariés sans empreinte doivent pouvoir badger). En revanche, une
+    // régularisation RH (isManual) reste réservée aux rôles RH : un poste de
+    // pointage ne doit jamais pouvoir inventer un pointage pour autrui.
+    const guard = await requireActor(request, isPinFallback ? TERMINAL_ROLES : WRITE_ROLES, {
+      action: isPinFallback ? "PUNCH_PIN_FALLBACK" : "PUNCH_MANUAL_CREATE",
+      entityType: "punch",
+      label: isPinFallback ? "pointage de repli par code + PIN" : "saisie d'un pointage manuel",
+    });
+    if ("error" in guard) return guard.error;
+    const actor = guard.actor;
+
+    if (!employeeId && !employeeCode) {
+      return NextResponse.json(
+        { success: false, error: "L'employé et le type de pointage sont requis." },
+        { status: 400 }
+      );
+    }
+
+    if (!type && !isPinFallback) {
       return NextResponse.json(
         { success: false, error: "L'employé et le type de pointage sont requis." },
         { status: 400 }
@@ -169,10 +185,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [emp] = await db
-      .select()
-      .from(employees)
-      .where(eq(employees.id, Number(employeeId)));
+    // Le repli PIN peut arriver depuis la borne, qui n'a pas le droit de lire
+    // l'annuaire : elle envoie le code salarié, résolu ici côté serveur.
+    let emp;
+    if (employeeId) {
+      [emp] = await db
+        .select()
+        .from(employees)
+        .where(eq(employees.id, Number(employeeId)));
+    } else if (employeeCode) {
+      [emp] = await db
+        .select()
+        .from(employees)
+        .where(eq(employees.employeeCode, String(employeeCode).trim()));
+    }
 
     if (!emp) {
       return NextResponse.json({ success: false, error: "Employé non trouvé." }, { status: 404 });
@@ -195,6 +221,17 @@ export async function POST(request: NextRequest) {
         );
       }
       if (!pin || String(pin) !== String(emp.pinCode)) {
+        // Tentative de repli refusée : on trace l'échec, jamais le code saisi
+        await recordAudit({
+          action: "PUNCH_PIN_FALLBACK",
+          outcome: "DENIED",
+          actor,
+          request,
+          entityType: "employee",
+          entityId: emp.id,
+          summary: `Pointage par repli refusé pour ${emp.firstName} ${emp.lastName} (${emp.employeeCode}) : code PIN incorrect.`,
+          details: { borne: kioskLocation, codeFourni: pin ? "incorrect" : "absent" },
+        });
         return NextResponse.json({ success: false, error: "Code PIN incorrect." }, { status: 401 });
       }
 
@@ -252,6 +289,26 @@ export async function POST(request: NextRequest) {
     if (!created) {
       return NextResponse.json({ success: false, error: "Employé non trouvé." }, { status: 404 });
     }
+
+    const isPin = resolvedMethod === "PIN_FALLBACK";
+    await recordAudit({
+      action: isPin ? "PUNCH_PIN_FALLBACK" : "PUNCH_MANUAL_CREATE",
+      actor,
+      request,
+      entityType: "punch",
+      entityId: created.punch.id,
+      summary: isPin
+        ? `Pointage par repli code + PIN pour ${created.employee.firstName} ${created.employee.lastName} (${PUNCH_TYPE_LABELS[resolvedType] ?? resolvedType}) — non biométrique.`
+        : `Pointage manuel saisi pour ${created.employee.firstName} ${created.employee.lastName} (${PUNCH_TYPE_LABELS[resolvedType] ?? resolvedType}) : ${manualReason || "régularisation DRH"}.`,
+      details: {
+        typePointage: resolvedType,
+        methode: resolvedMethod,
+        motif: manualReason || null,
+        horodatage: created.punch.punchTime,
+        borne: kioskLocation,
+        statutCalcule: created.punch.status,
+      },
+    });
 
     return NextResponse.json({
       success: true,

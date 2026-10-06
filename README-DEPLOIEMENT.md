@@ -125,22 +125,31 @@ tests et les postes non équipés.
 npm run test:biometric
 ```
 
-Ce test simule un capteur FIDO2 réel et vérifie 40 assertions, dont le refus des
+Ce test simule un capteur FIDO2 réel et vérifie 46 assertions, dont le refus des
 pointages biométriques forgés (l'ancienne faille), des signatures invalides, des
 rejeux et des pointages au nom d'un collègue.
+
+Les deux autres suites couvrent les habilitations et la traçabilité :
+
+```bash
+npm run test:auth     # 65 assertions : sessions, rôles, anti-force brute, garde-fous
+npm run test:audit    # 65 assertions : journal d'audit, immuabilité, aucun secret en base
+```
 
 ## Important avant une utilisation réelle
 
 Le projet fourni est une base de démonstration. Déjà en place : biométrie vérifiée
 par le capteur, authentification, mots de passe hachés, rôles, sessions
-révocables, protection anti-CSRF et anti-force brute (voir
-`README-SECURITE.md`).
+révocables, protection anti-CSRF et anti-force brute, et **journal d'audit en
+écriture seule** consultable par l'administrateur et la DRH (onglet *Journal
+d'audit*, voir `README-SECURITE.md`).
 
 Avant de l'utiliser avec de vrais employés, il reste notamment à :
 
 - activer **HTTPS** partout (cookies `Secure`, biométrie, RGPD) et changer les
   comptes/mots de passe de démonstration ;
-- mettre en place un **journal d'audit** des consultations et modifications ;
+- définir une **durée de conservation du journal d'audit** (12 mois recommandés),
+  avec export scellé avant purge : la conservation est aujourd'hui illimitée ;
 - ajouter un **second facteur** pour les rôles administrateur et DRH ;
 - déplacer la limitation des tentatives de connexion vers un stockage partagé
   (Redis/base) si l'application tourne sur plusieurs instances ;

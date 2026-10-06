@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { clearSessionCookie, destroySession, sameOrigin } from "@/lib/auth";
+import { clearSessionCookie, currentActor, destroySession, sameOrigin } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // L'acteur est lu avant de détruire la session, pour la piste d'audit
+    const actor = await currentActor(request);
     await destroySession(request);
+
+    if (actor) {
+      await recordAudit({
+        action: "AUTH_LOGOUT",
+        actor,
+        request,
+        entityType: "user",
+        entityId: actor.id,
+        summary: `Déconnexion de ${actor.name}.`,
+      });
+    }
+
     const response = NextResponse.json({ success: true, message: "Déconnecté." });
     clearSessionCookie(response);
     return response;

@@ -14,6 +14,7 @@ const CAPABILITIES: Capability[] = [
   "manageDepartments",
   "dispatchReports",
   "manageUsers",
+  "viewAudit",
   "promoteAdmin",
 ];
 

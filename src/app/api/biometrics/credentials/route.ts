@@ -4,6 +4,7 @@ import { biometricCredentials, employees } from "@/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { requireActor } from "@/lib/auth";
 import { PORTAL_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,11 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const guard = await requireActor(request, ["admin", "drh"]);
+    const guard = await requireActor(request, ["admin", "drh"], {
+      action: "BIOMETRIC_REVOKE",
+      entityType: "biometric_credential",
+      label: "révocation d'une empreinte",
+    });
     if ("error" in guard) return guard.error;
 
     const { searchParams } = new URL(request.url);
@@ -117,6 +122,29 @@ export async function DELETE(request: NextRequest) {
         })
         .where(eq(employees.id, deletedEmployeeId));
     }
+
+    const [concerned] = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.id, deletedEmployeeId));
+
+    await recordAudit({
+      action: "BIOMETRIC_REVOKE",
+      actor: guard.actor,
+      request,
+      entityType: "biometric_credential",
+      entityId: credentialId || deletedEmployeeId,
+      summary: concerned
+        ? `Empreinte révoquée pour ${concerned.firstName} ${concerned.lastName} (${concerned.employeeCode}) — ${
+            credentialId ? "empreinte ciblée" : "toutes les empreintes"
+          }, ${remaining.length} restante(s).`
+        : `Empreinte révoquée (salarié n°${deletedEmployeeId}).`,
+      details: {
+        salarieId: deletedEmployeeId,
+        empreintesRestantes: remaining.length,
+        portee: credentialId ? "empreinte ciblée" : "toutes les empreintes du salarié",
+      },
+    });
 
     return NextResponse.json({
       success: true,

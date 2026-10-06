@@ -4,10 +4,15 @@ import { reportDispatches } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { requireActor } from "@/lib/auth";
 import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
-    const guard = await requireActor(request, PORTAL_ROLES);
+    const guard = await requireActor(request, PORTAL_ROLES, {
+      action: "DATA_EXPORT",
+      entityType: "report",
+      label: "consultation de l'historique des envois",
+    });
     if ("error" in guard) return guard.error;
 
     const reports = await db
@@ -24,8 +29,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const guard = await requireActor(request, WRITE_ROLES);
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "REPORT_DISPATCH",
+      entityType: "report",
+      label: "envoi d'un fichier de présence",
+    });
     if ("error" in guard) return guard.error;
+    const { actor } = guard;
 
     const body = await request.json();
     const {
@@ -41,7 +51,7 @@ export async function POST(request: NextRequest) {
       totalHoursWorked = "0",
       totalOvertimeHours = "0",
       totalLateMinutes = 0,
-      sentBy = "Sophie Laurent (DRH)",
+      sentBy,
       notes,
     } = body;
 
@@ -69,10 +79,28 @@ export async function POST(request: NextRequest) {
         totalLateMinutes: Number(totalLateMinutes),
         status: "DELIVERED",
         sentAt: new Date(),
-        sentBy,
+        // L'émetteur réel vient de la session, jamais du navigateur
+        sentBy: actor.name,
         notes: notes || null,
       })
       .returning();
+
+    await recordAudit({
+      action: "REPORT_DISPATCH",
+      actor,
+      request,
+      entityType: "report",
+      entityId: newReport.id,
+      summary: `Envoi du fichier « ${newReport.title} » à ${newReport.recipientName} (${newReport.recipientEmail}) — ${newReport.fileFormat}.`,
+      details: {
+        periode: `${newReport.periodStart} → ${newReport.periodEnd}`,
+        departementId: newReport.departmentId,
+        salariesConcernes: newReport.totalEmployees,
+        heuresTotales: newReport.totalHoursWorked,
+        heuresSupplementaires: newReport.totalOvertimeHours,
+        minutesRetard: newReport.totalLateMinutes,
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -87,8 +115,13 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const guard = await requireActor(request, WRITE_ROLES);
+    const guard = await requireActor(request, WRITE_ROLES, {
+      action: "REPORT_DELETE",
+      entityType: "report",
+      label: "suppression d'un envoi de fichier",
+    });
     if ("error" in guard) return guard.error;
+    const { actor } = guard;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -96,7 +129,25 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "ID manquant" }, { status: 400 });
     }
 
-    await db.delete(reportDispatches).where(eq(reportDispatches.id, Number(id)));
+    const [deleted] = await db
+      .delete(reportDispatches)
+      .where(eq(reportDispatches.id, Number(id)))
+      .returning();
+
+    await recordAudit({
+      action: "REPORT_DELETE",
+      actor,
+      request,
+      entityType: "report",
+      entityId: id,
+      summary: deleted
+        ? `Suppression de l'historique d'envoi « ${deleted.title} » (${deleted.recipientEmail}).`
+        : `Suppression d'un envoi de fichier (id ${id}).`,
+      details: deleted
+        ? { destinataire: deleted.recipientEmail, periode: `${deleted.periodStart} → ${deleted.periodEnd}` }
+        : null,
+    });
+
     return NextResponse.json({ success: true, message: "Rapport supprimé de l'historique" });
   } catch (error) {
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });

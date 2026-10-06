@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { seedDatabase } from "@/db/seed";
 import { currentActor } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -20,14 +21,23 @@ function hasSeedSecret(request: NextRequest) {
   return Boolean(configuredSecret && providedSecret && providedSecret === configuredSecret);
 }
 
-async function isAuthorized(request: NextRequest) {
-  if (hasSeedSecret(request)) return true;
-  const actor = await currentActor(request);
-  return actor?.role === "admin" || actor?.role === "drh";
-}
-
 async function runSeed(request: NextRequest) {
-  if (!(await isAuthorized(request))) {
+  const actor = await currentActor(request);
+  const viaSecret = hasSeedSecret(request);
+
+  if (!viaSecret && !(actor?.role === "admin" || actor?.role === "drh")) {
+    await recordAudit({
+      action: "ACCESS_DENIED",
+      outcome: "DENIED",
+      actor,
+      request,
+      entityType: "seed",
+      summary: actor
+        ? `Réinitialisation des données refusée : le rôle ${actor.role} n'y est pas autorisé.`
+        : "Réinitialisation des données refusée : aucun secret valide ni session RH.",
+      details: { voie: "seed", roleTente: actor?.role ?? null },
+    });
+
     return NextResponse.json(
       {
         success: false,
@@ -40,6 +50,18 @@ async function runSeed(request: NextRequest) {
 
   try {
     const result = await seedDatabase();
+
+    await recordAudit({
+      action: "SEED_RESET",
+      actor,
+      request,
+      entityType: "seed",
+      summary: viaSecret
+        ? "Réinitialisation des données de démonstration via le secret de déploiement."
+        : `Réinitialisation des données de démonstration par ${actor?.name}.`,
+      details: { voie: viaSecret ? "secret de déploiement" : "session RH", resultat: result },
+    });
+
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     console.error("Seed error:", error);
