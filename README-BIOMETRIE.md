@@ -101,9 +101,13 @@ navigateur, un `curl` ou un autre site.
 
 ⚠️ **À connaître avant la mise en production** :
 
-1. **Le capteur est lié au poste.** Une empreinte enrôlée sur le PC A ne
+1. **Le capteur et le domaine sont liés.** Une empreinte enrôlée sur le PC A ne
    fonctionne pas sur la borne B : enrôlez chaque salarié **sur la borne
-   elle-même** (bouton « Enrôler » du terminal ou onglet Salariés).
+   elle-même** (bouton « Enrôler » du terminal ou onglet Salariés). L'empreinte
+   est également liée au **domaine** de l'application : un enrôlement fait sur
+   `http://localhost:3000` ne vaut pas pour `https://mon-app.vercel.app`
+   (protection anti-hameçonnage de WebAuthn). Fixez donc le domaine définitif
+   avant de déployer les enrôlements.
 2. **Windows Hello / macOS peuvent demander un PIN ou un visage** selon la
    configuration du poste : `userVerification: "required"` garantit une
    vérification utilisateur, pas nécessairement une empreinte. Pour exiger un

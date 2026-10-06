@@ -67,7 +67,7 @@ export function describeWebAuthnError(error: unknown, support?: BiometricSupport
     return "Aucun capteur biométrique compatible n'est disponible sur ce poste (WebAuthn/FIDO2 requis).";
   }
   if (name === "SecurityError") {
-    return "Contexte non sécurisé : la reconnaissance d'empreinte exige HTTPS (ou localhost).";
+    return "Le navigateur a refusé le domaine de l'application pour la biométrie. Utilisez HTTPS (ou localhost) et exactement le même domaine que lors de l'enrôlement.";
   }
   if (name === "AbortError") {
     return "Opération biométrique interrompue. Reposez le doigt pour recommencer.";
