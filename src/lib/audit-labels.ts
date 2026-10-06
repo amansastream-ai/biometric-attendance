@@ -12,6 +12,7 @@ export type AuditAction =
   | "AUTH_LOGIN"
   | "AUTH_LOGIN_FAILED"
   | "AUTH_LOGIN_BLOCKED"
+  | "AUTH_SIGNUP"
   | "AUTH_LOGOUT"
   | "AUTH_PASSWORD_CHANGE"
   | "AUTH_2FA_REQUIRED"
@@ -48,6 +49,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   AUTH_LOGIN: "Connexion réussie",
   AUTH_LOGIN_FAILED: "Échec de connexion",
   AUTH_LOGIN_BLOCKED: "Connexion bloquée (tentatives répétées)",
+  AUTH_SIGNUP: "Inscription du premier administrateur",
   AUTH_LOGOUT: "Déconnexion",
   AUTH_PASSWORD_CHANGE: "Changement de mot de passe",
   AUTH_2FA_REQUIRED: "Second facteur demandé",

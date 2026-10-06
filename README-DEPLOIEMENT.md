@@ -56,7 +56,30 @@ Ajoute les variables d'environnement :
 - `SEED_SECRET` = une longue valeur secrète de ton choix
 - `SESSION_TTL_HOURS` = durée de vie d'une session en heures (facultatif, 12 par défaut)
 
-## 5 bis. Se connecter la première fois
+## 5 bis. Première utilisation : inscrire le premier administrateur
+
+Sur une base **vide** (aucun compte), l'écran de connexion bascule
+automatiquement en mode « première utilisation » : au lieu du formulaire de
+connexion, il affiche l'inscription du **premier administrateur**.
+
+- Le premier compte créé reçoit le rôle **Administrateur système** et ouvre une
+  session immédiatement (même cookie HttpOnly qu'une connexion).
+- Le mot de passe est haché (scrypt + sel) avant d'être écrit en base : jamais
+  de valeur lisible.
+- Dès que ce compte existe, le **portail d'inscription se ferme définitivement**
+  (`POST /api/auth/signup` → 403, quel que soit l'email fourni) : les comptes
+  suivants ne peuvent plus être créés que par un administrateur ou la DRH
+  (onglet **Comptes & rôles**).
+- Chaque tentative — succès, refus, échec de validation — est tracée dans le
+  journal d'audit sous l'action `AUTH_SIGNUP`.
+
+Pour tester ce flux de bout en bout (il vide la base puis la re-seede) :
+
+```bash
+npm run test:signup   # 43 vérifications attendues ✅
+```
+
+## 5 ter. Se connecter la première fois (instance avec seed)
 
 L'application affiche un écran de connexion : **aucune donnée RH n'est accessible
 sans compte**. Les comptes de démonstration créés par le seed sont :
@@ -74,7 +97,7 @@ rôles** et désactive ou supprime les comptes de démonstration. Les mots de pa
 sont stockés hachés (scrypt + sel) et les sessions sont révocables
 individuellement (désactiver un compte déconnecte immédiatement l'utilisateur).
 
-## 5 ter. Protéger les comptes sensibles (second facteur)
+## 5 quater. Protéger les comptes sensibles (second facteur)
 
 Les rôles **administrateur** et **DRH** peuvent activer un second facteur : une
 clé de sécurité WebAuthn du poste (Touch ID, Windows Hello, capteur Android, clé

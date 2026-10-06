@@ -53,6 +53,7 @@ façon.
 
 | Besoin | Comment |
 | --- | --- |
+| Créer le tout premier compte (instance vierge) | À la première visite, l'écran de connexion affiche l'inscription du premier administrateur (`POST /api/auth/signup`) ; le portail se ferme définitivement dès le premier compte créé |
 | Créer un compte | Onglet **Comptes & rôles** → « Nouveau compte » (ou `POST /api/users`) |
 | Réinitialiser un mot de passe | Icône clé dans la liste des comptes → nouveau mot de passe communiqué à l'utilisateur, qui le change ensuite |
 | Déconnecter quelqu'un immédiatement | Désactiver le compte (bascule) ou changer son mot de passe : toutes ses sessions sont révoquées |
@@ -75,6 +76,7 @@ résumé en français, détails expurgés, adresse IP, navigateur et horodatage.
 | Ce qui est tracé | Codes d'action |
 | --- | --- |
 | Connexions (réussie, échouée, bloquée) et déconnexions | `AUTH_LOGIN`, `AUTH_LOGIN_FAILED`, `AUTH_LOGIN_BLOCKED`, `AUTH_LOGOUT` |
+| Inscription du premier administrateur (portail à usage unique, ouvert tant que la table `users` est vide) | `AUTH_SIGNUP` |
 | Changement de mot de passe | `AUTH_PASSWORD_CHANGE` |
 | Comptes utilisateurs (création, modification, suppression) | `USER_CREATE`, `USER_UPDATE`, `USER_DELETE` |
 | Salariés et pôles (création, modification, suppression) | `EMPLOYEE_*`, `DEPARTMENT_*` |
@@ -187,6 +189,7 @@ npm run test:auth        # 65 vérifications : accès, rôles, sessions, abus, g
 npm run test:biometric   # 46 vérifications : capteur WebAuthn, anti-forge, anti-rejeu
 npm run test:audit       # 65 vérifications : accès au journal, immuabilité, secrets, filtres
 npm run test:twofa       # 76 vérifications : second facteur, anti-rejeu, session restreinte
+npm run test:signup      # 43 vérifications : instance vierge, validation, CSRF, scrypt, portail fermé
 ```
 
 En politique stricte (`TWO_FACTOR_POLICY=enforce npm run dev`), la suite 2FA
