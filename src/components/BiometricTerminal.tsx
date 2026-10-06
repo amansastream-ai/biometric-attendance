@@ -700,7 +700,19 @@ export function BiometricTerminal({
               )}
             </div>
 
-            {support && !support.platformAuthenticator && (
+            {support && !support.secureContext && (
+              <div className="mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-[11px] flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>
+                  Le navigateur bloque la reconnaissance d&apos;empreinte hors contexte
+                  sécurisé. Ouvrez l&apos;application en <strong>HTTPS</strong> ou via{" "}
+                  <strong>http://localhost:3000</strong> (une adresse du type
+                  http://192.168.x.x:3000 ne fonctionne pas).
+                </span>
+              </div>
+            )}
+
+            {support && support.secureContext && !support.platformAuthenticator && (
               <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <span>

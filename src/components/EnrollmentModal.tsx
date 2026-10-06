@@ -233,24 +233,28 @@ export function EnrollmentModal({
           {support && (
             <div
               className={`mb-4 p-3 rounded-xl border text-xs flex items-start gap-2 ${
-                support.platformAuthenticator
+                support.secureContext && support.platformAuthenticator
                   ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300"
                   : "bg-amber-500/10 border-amber-500/25 text-amber-300"
               }`}
             >
-              {support.platformAuthenticator ? (
+              {support.secureContext && support.platformAuthenticator ? (
                 <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
               ) : (
                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               )}
               <div className="space-y-1">
                 <div className="font-semibold">
-                  {support.platformAuthenticator
+                  {!support.secureContext
+                    ? "Contexte non sécurisé : le navigateur bloquera le capteur"
+                    : support.platformAuthenticator
                     ? "Capteur biométrique détecté sur ce poste"
                     : "Aucun capteur d'empreinte compatible détecté sur ce poste"}
                 </div>
                 <p className="text-[11px] leading-relaxed opacity-90">
-                  {support.platformAuthenticator
+                  {!support.secureContext
+                    ? "L'enrôlement doit être fait en HTTPS ou via http://localhost:3000. Une adresse du type http://192.168.x.x:3000 est refusée par les navigateurs pour raisons de sécurité."
+                    : support.platformAuthenticator
                     ? "L'empreinte est lue par le capteur du poste (Touch ID, Windows Hello, lecteur FIDO2...). Le gabarit reste dans le capteur : seul le résultat signé est transmis au serveur."
                     : "Installez/enrôlez d'abord une empreinte dans le système du poste (Touch ID, Windows Hello ou lecteur FIDO2), ou utilisez le repli code + PIN pour le pointage."}
                 </p>
