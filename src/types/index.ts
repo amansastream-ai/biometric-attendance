@@ -44,7 +44,13 @@ export interface PunchRecord {
   employeeId: number;
   punchTime: string;
   type: "IN" | "OUT" | "BREAK_START" | "BREAK_END";
-  punchMethod: "FINGERPRINT" | "WEBAUTHN" | "KIOSK_PAD" | "MANUAL_DRH" | "PIN_FALLBACK";
+  punchMethod:
+    | "WEBAUTHN"
+    | "FINGERPRINT"
+    | "KIOSK_PAD"
+    | "MANUAL_DRH"
+    | "PIN_FALLBACK"
+    | "DEMO_SEED";
   fingerMatched?: string | null;
   biometricConfidence?: number | null;
   kioskLocation: string;

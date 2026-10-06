@@ -207,6 +207,10 @@ export default function HomePage() {
             <BiometricTerminal
               employees={employees}
               onPunchSuccess={handlePunchSuccess}
+              onOpenEnrollment={(emp) => {
+                setEnrollmentTargetEmp(emp);
+                setIsEnrollmentOpen(true);
+              }}
               standalone={true}
             />
           </div>
@@ -323,6 +327,10 @@ export default function HomePage() {
                   <BiometricTerminal
                     employees={employees}
                     onPunchSuccess={handlePunchSuccess}
+                    onOpenEnrollment={(emp) => {
+                      setEnrollmentTargetEmp(emp);
+                      setIsEnrollmentOpen(true);
+                    }}
                   />
                 </div>
               )}
@@ -392,6 +400,7 @@ export default function HomePage() {
       {/* Biometric Enrollment Wizard */}
       {enrollmentTargetEmp && (
         <EnrollmentModal
+          key={`enrollment-${enrollmentTargetEmp.id}`}
           isOpen={isEnrollmentOpen}
           onClose={() => {
             setIsEnrollmentOpen(false);

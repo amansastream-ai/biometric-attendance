@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, numeric, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -49,14 +49,45 @@ export const employees = pgTable("employees", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+/**
+ * Empreintes réellement enrôlées sur un capteur biométrique (WebAuthn / FIDO2).
+ *
+ * La clé publique est fournie par le capteur (Secure Enclave, TPM, capteur
+ * d'empreinte Android/Windows Hello...). Elle permet au serveur de **vérifier
+ * cryptographiquement** que c'est bien le doigt du salarié qui a été présenté
+ * au moment du pointage : le gabarit biométrique ne quitte jamais le capteur.
+ */
+export const biometricCredentials = pgTable(
+  "biometric_credentials",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id").notNull(),
+    // Identifiant opaque du credential (base64url) renvoyé par le capteur
+    credentialId: text("credential_id").notNull().unique(),
+    // Clé publique COSE du capteur (base64url) — sert à vérifier les signatures
+    publicKey: text("public_key").notNull(),
+    counter: integer("counter").notNull().default(0),
+    transports: text("transports").notNull().default(""),
+    deviceType: text("device_type").notNull().default("singleDevice"), // singleDevice | multiDevice
+    backedUp: boolean("backed_up").notNull().default(false),
+    aaguid: text("aaguid"),
+    finger: text("finger").notNull().default("Pouce Droit"),
+    label: text("label"), // ex: "MacBook de Fatou", "Borne entrée A"
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("biometric_credentials_employee_idx").on(table.employeeId)]
+);
+
 export const punchRecords = pgTable("punch_records", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull(),
   punchTime: timestamp("punch_time", { withTimezone: true }).notNull().defaultNow(),
   type: text("type").notNull(), // 'IN' (Arrivée), 'OUT' (Départ), 'BREAK_START' (Pause), 'BREAK_END' (Reprise)
-  punchMethod: text("punch_method").notNull().default("FINGERPRINT"), // 'FINGERPRINT', 'WEBAUTHN', 'KIOSK_PAD', 'MANUAL_DRH', 'PIN_FALLBACK'
-  fingerMatched: text("finger_matched").default("Pouce Droit"),
-  biometricConfidence: integer("biometric_confidence").default(98),
+  punchMethod: text("punch_method").notNull().default("MANUAL_DRH"), // 'WEBAUTHN' (capteur vérifié), 'PIN_FALLBACK', 'KIOSK_PAD', 'MANUAL_DRH', 'DEMO_SEED'
+  fingerMatched: text("finger_matched"),
+  biometricConfidence: integer("biometric_confidence"),
   kioskLocation: text("kiosk_location").notNull().default("Borne Entrée Principale"),
   isManual: boolean("is_manual").notNull().default(false),
   manualReason: text("manual_reason"),

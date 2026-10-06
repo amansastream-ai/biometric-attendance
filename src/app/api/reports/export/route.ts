@@ -138,7 +138,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const bioScore = inPunch?.biometricConfidence ? `${inPunch.biometricConfidence}%` : "98%";
+      // Seul un pointage signé par le capteur est présenté comme biométrique
+      const bioScore =
+        inPunch?.punchMethod === "WEBAUTHN" && inPunch?.biometricConfidence
+          ? `${inPunch.biometricConfidence}%`
+          : "non biométrique";
 
       rows.push([
         emp.employeeCode,

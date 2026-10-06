@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { PunchRecord, Employee, Department } from "@/types";
+import { punchMethodLabel } from "@/lib/punch-labels";
 import {
   Clock,
   Filter,
@@ -288,18 +289,28 @@ export function PunchesTab({
                       )}
                     </td>
 
-                    {/* Biometrics */}
+                    {/* Biométrie / méthode de pointage */}
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5 text-slate-300">
-                        <Fingerprint className="w-3.5 h-3.5 text-cyan-400" />
+                        <Fingerprint
+                          className={`w-3.5 h-3.5 ${
+                            punch.punchMethod === "WEBAUTHN" ? "text-cyan-400" : "text-slate-500"
+                          }`}
+                        />
                         <span className="font-medium">
-                          {punch.fingerMatched || "Pouce Droit"}
+                          {punch.punchMethod === "WEBAUTHN"
+                            ? punch.fingerMatched || "Empreinte"
+                            : "—"}
                         </span>
                       </div>
-                      <div className="text-[10px] text-emerald-400 font-mono">
-                        {punch.punchMethod === "FINGERPRINT"
-                          ? `${punch.biometricConfidence || 98}% match optique`
-                          : "Saisie DRH"}
+                      <div
+                        className={`text-[10px] font-mono ${
+                          punch.punchMethod === "WEBAUTHN" ? "text-emerald-400" : "text-amber-400"
+                        }`}
+                      >
+                        {punch.punchMethod === "WEBAUTHN"
+                          ? "Signature capteur vérifiée"
+                          : punchMethodLabel(punch.punchMethod)}
                       </div>
                     </td>
 

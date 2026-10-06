@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Employee, PunchRecord } from "@/types";
+import { punchMethodLabel } from "@/lib/punch-labels";
 import {
   Users,
   Clock,
@@ -252,12 +253,24 @@ export function DashboardTab({
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                          <Fingerprint className="w-3 h-3 text-cyan-400" />
-                          <span>{punch.fingerMatched || "Pouce Droit"}</span>
-                          <span className="text-slate-600">•</span>
-                          <span className="text-emerald-400 font-mono">
-                            {punch.biometricConfidence || 98}% match
+                          <Fingerprint
+                            className={`w-3 h-3 ${
+                              punch.punchMethod === "WEBAUTHN" ? "text-cyan-400" : "text-slate-500"
+                            }`}
+                          />
+                          <span>
+                            {punch.punchMethod === "WEBAUTHN"
+                              ? punch.fingerMatched || "Empreinte"
+                              : punchMethodLabel(punch.punchMethod)}
                           </span>
+                          {punch.punchMethod === "WEBAUTHN" && (
+                            <>
+                              <span className="text-slate-600">•</span>
+                              <span className="text-emerald-400 font-mono">
+                                signature capteur vérifiée
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>

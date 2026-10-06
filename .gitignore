@@ -1,0 +1,20 @@
+# Dépendances
+node_modules/
+
+# Build Next.js
+.next/
+out/
+build/
+
+# Variables d'environnement (ne jamais versionner)
+.env
+.env.*
+!.env.example
+
+# Base locale PGlite (npm run db:local)
+.pglite-data/
+
+# Divers
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
