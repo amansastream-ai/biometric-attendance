@@ -74,6 +74,35 @@ rôles** et désactive ou supprime les comptes de démonstration. Les mots de pa
 sont stockés hachés (scrypt + sel) et les sessions sont révocables
 individuellement (désactiver un compte déconnecte immédiatement l'utilisateur).
 
+## 5 ter. Protéger les comptes sensibles (second facteur)
+
+Les rôles **administrateur** et **DRH** peuvent activer un second facteur : une
+clé de sécurité WebAuthn du poste (Touch ID, Windows Hello, capteur Android, clé
+USB FIDO2). Elle est demandée **en plus du mot de passe** à chaque connexion.
+
+1. Se connecter, puis menu utilisateur (en haut à droite) → **« Sécurité du
+   compte (second facteur) »** ;
+2. saisir un nom de clé (ex. « MacBook de Nadia ») puis **« Enregistrer une clé
+   de sécurité »** ;
+3. valider avec le capteur du poste.
+
+Une fois une clé enregistrée, la connexion se fait en deux temps : mot de passe,
+puis validation par la clé. Points utiles :
+
+- une **bannière** rappelle aux rôles sensibles qui n'ont pas encore de clé
+  qu'ils doivent en enrôler une ;
+- la **dernière clé** d'un compte sensible ne peut pas être révoquée : enrôlez la
+  nouvelle avant de retirer l'ancienne ;
+- clé perdue : un administrateur peut révoquer la clé depuis **Comptes & rôles**
+  (l'utilisateur en enregistre une nouvelle à la connexion suivante) ;
+- pour rendre le second facteur **obligatoire** (session restreinte à
+  l'enrôlement tant qu'aucune clé n'est présente), ajoutez
+  `TWO_FACTOR_POLICY=enforce` dans les variables d'environnement. À faire une
+  fois les clés de l'administrateur et de la DRH enrôlées.
+
+Le capteur ne transmet qu'une clé publique : aucune empreinte, aucun code, aucun
+secret ne circule ni n'est stocké côté serveur.
+
 ## 4. Créer les tables PostgreSQL
 
 Après avoir configuré `DATABASE_URL` sur ton ordinateur, tu peux synchroniser le schéma avec :
@@ -129,20 +158,23 @@ Ce test simule un capteur FIDO2 réel et vérifie 46 assertions, dont le refus d
 pointages biométriques forgés (l'ancienne faille), des signatures invalides, des
 rejeux et des pointages au nom d'un collègue.
 
-Les deux autres suites couvrent les habilitations et la traçabilité :
+Les suites complémentaires couvrent les habilitations, la traçabilité et le
+second facteur :
 
 ```bash
 npm run test:auth     # 65 assertions : sessions, rôles, anti-force brute, garde-fous
 npm run test:audit    # 65 assertions : journal d'audit, immuabilité, aucun secret en base
+npm run test:twofa    # 76 assertions : clé de sécurité, anti-rejeu, session restreinte
 ```
 
 ## Important avant une utilisation réelle
 
 Le projet fourni est une base de démonstration. Déjà en place : biométrie vérifiée
 par le capteur, authentification, mots de passe hachés, rôles, sessions
-révocables, protection anti-CSRF et anti-force brute, et **journal d'audit en
+révocables, protection anti-CSRF et anti-force brute, **journal d'audit en
 écriture seule** consultable par l'administrateur et la DRH (onglet *Journal
-d'audit*, voir `README-SECURITE.md`).
+d'audit*) et **second facteur** par clé de sécurité pour les rôles sensibles
+(voir `README-SECURITE.md`).
 
 Avant de l'utiliser avec de vrais employés, il reste notamment à :
 
@@ -150,7 +182,8 @@ Avant de l'utiliser avec de vrais employés, il reste notamment à :
   comptes/mots de passe de démonstration ;
 - définir une **durée de conservation du journal d'audit** (12 mois recommandés),
   avec export scellé avant purge : la conservation est aujourd'hui illimitée ;
-- ajouter un **second facteur** pour les rôles administrateur et DRH ;
+- enrôler les clés de sécurité de l'administrateur et de la DRH (§5 ter), puis
+  passer `TWO_FACTOR_POLICY=enforce` pour rendre le second facteur obligatoire ;
 - déplacer la limitation des tentatives de connexion vers un stockage partagé
   (Redis/base) si l'application tourne sur plusieurs instances ;
 - documenter la conformité RGPD : information des salariés, base légale,

@@ -89,6 +89,9 @@ export type SessionState = {
     departmentId: number | null;
   } | null;
   capabilities: Record<Capability, boolean>;
+  /** Session ouverte avant le second facteur : enrôlement obligatoire. */
+  twoFactorPending?: boolean;
+  twoFactorPolicy?: "prompt" | "enforce";
 };
 
 export async function fetchSession(): Promise<SessionState> {
@@ -104,14 +107,9 @@ export async function fetchSession(): Promise<SessionState> {
   return payload;
 }
 
-export async function login(email: string, password: string): Promise<SessionState["user"]> {
-  const payload = await apiFetch<{ user: SessionState["user"] }>(
-    "/api/auth/login",
-    { method: "POST", body: JSON.stringify({ email, password }) },
-    { notifyOn401: false }
-  );
-  return payload.user;
-}
+// La connexion (et le second facteur) vit dans src/lib/two-factor-client.ts :
+// un seul chemin d'authentification, pour qu'aucun écran n'ouvre de session en
+// sautant l'étape de la clé de sécurité.
 
 export async function logout(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST" });

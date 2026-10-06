@@ -13,16 +13,41 @@ import type { NextRequest, NextResponse } from "next/server";
 export const RP_NAME = "BioPointage";
 
 const CHALLENGE_COOKIE = "bp_bio_challenge";
+// Cookie distinct pour le second facteur : sur un poste partagé (borne), un
+// enrôlement d'empreinte et une connexion 2FA peuvent se croiser, les deux
+// défis ne doivent jamais s'écraser l'un l'autre.
+const TWO_FACTOR_COOKIE = "bp_2fa_challenge";
 const CHALLENGE_TTL_SECONDS = 300;
 
 export type ChallengeKind = "registration" | "authentication";
+export type TwoFactorChallengeKind = "two-factor-registration" | "login";
 
 export type ChallengePayload = {
   challenge: string;
-  kind: ChallengeKind;
+  kind: ChallengeKind | TwoFactorChallengeKind;
   employeeId?: number;
+  userId?: number;
+  label?: string;
   exp: number;
 };
+
+/**
+ * Politique de second facteur.
+ *
+ * - `prompt` (défaut) : une clé enrôlée est exigée à la connexion ; un compte
+ *   sensible qui n'en a pas encore est signalé (bannière + journal) mais peut
+ *   se connecter pour aller l'enrôler.
+ * - `enforce` : un compte sensible sans clé n'obtient qu'une session restreinte,
+ *   limitée à l'enrôlement de sa clé — aucune donnée RH n'est accessible.
+ *
+ * `prompt` garde la démonstration utilisable ; la production doit viser
+ * `enforce` (voir README-SECURITE.md).
+ */
+export type TwoFactorPolicy = "prompt" | "enforce";
+
+export function twoFactorPolicy(): TwoFactorPolicy {
+  return process.env.TWO_FACTOR_POLICY === "enforce" ? "enforce" : "prompt";
+}
 
 /** Domaine (RP ID) et origine attendus par le capteur, déduits de la requête. */
 export function getRpConfig(request: NextRequest): { rpID: string; origin: string } {
@@ -72,6 +97,14 @@ export function setChallengeCookie(
   response: NextResponse,
   payload: Omit<ChallengePayload, "exp">
 ): void {
+  writeChallenge(response, CHALLENGE_COOKIE, payload);
+}
+
+function writeChallenge(
+  response: NextResponse,
+  cookieName: string,
+  payload: Omit<ChallengePayload, "exp">
+): void {
   const fullPayload: ChallengePayload = {
     ...payload,
     exp: Date.now() + CHALLENGE_TTL_SECONDS * 1000,
@@ -79,7 +112,7 @@ export function setChallengeCookie(
   const encoded = Buffer.from(JSON.stringify(fullPayload), "utf8").toString("base64url");
 
   response.cookies.set({
-    name: CHALLENGE_COOKIE,
+    name: cookieName,
     value: `${encoded}.${sign(encoded)}`,
     httpOnly: true,
     sameSite: "lax",
@@ -93,7 +126,15 @@ export function readChallengeCookie(
   request: NextRequest,
   expectedKind: ChallengeKind
 ): ChallengePayload | null {
-  const raw = request.cookies.get(CHALLENGE_COOKIE)?.value;
+  return readChallenge(request, CHALLENGE_COOKIE, expectedKind);
+}
+
+function readChallenge(
+  request: NextRequest,
+  cookieName: string,
+  expectedKind: ChallengeKind | TwoFactorChallengeKind
+): ChallengePayload | null {
+  const raw = request.cookies.get(cookieName)?.value;
   if (!raw) return null;
 
   const [encoded, signature] = raw.split(".");
@@ -115,8 +156,12 @@ export function readChallengeCookie(
 }
 
 export function clearChallengeCookie(response: NextResponse): void {
+  clearCookie(response, CHALLENGE_COOKIE);
+}
+
+function clearCookie(response: NextResponse, cookieName: string): void {
   response.cookies.set({
-    name: CHALLENGE_COOKIE,
+    name: cookieName,
     value: "",
     httpOnly: true,
     sameSite: "lax",
@@ -124,4 +169,26 @@ export function clearChallengeCookie(response: NextResponse): void {
     path: "/",
     maxAge: 0,
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Second facteur des comptes utilisateurs (clé WebAuthn du poste)     */
+/* ------------------------------------------------------------------ */
+
+export function setTwoFactorChallengeCookie(
+  response: NextResponse,
+  payload: Omit<ChallengePayload, "exp">
+): void {
+  writeChallenge(response, TWO_FACTOR_COOKIE, payload);
+}
+
+export function readTwoFactorChallengeCookie(
+  request: NextRequest,
+  expectedKind: TwoFactorChallengeKind
+): ChallengePayload | null {
+  return readChallenge(request, TWO_FACTOR_COOKIE, expectedKind);
+}
+
+export function clearTwoFactorChallengeCookie(response: NextResponse): void {
+  clearCookie(response, TWO_FACTOR_COOKIE);
 }

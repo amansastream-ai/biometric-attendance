@@ -12,7 +12,9 @@ import {
   setSessionCookie,
   verifyPassword,
 } from "@/lib/auth";
-import { ROLE_LABELS, type Role } from "@/lib/permissions";
+import { ROLE_LABELS, TWO_FACTOR_ROLES, capabilitiesFor, type Role } from "@/lib/permissions";
+import { twoFactorPolicy } from "@/lib/webauthn";
+import { activeUserCredentials } from "@/lib/two-factor";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -123,26 +125,74 @@ export async function POST(request: NextRequest) {
         .where(eq(users.id, user.id));
     }
 
-    const { token, expiresAt } = await createSession(user.id, request);
+    const actor = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role as Role,
+      avatarUrl: user.avatarUrl,
+      departmentId: user.departmentId,
+    };
+    const roleLabel = ROLE_LABELS[user.role as Role] ?? user.role;
+    const credentials = await activeUserCredentials(user.id);
+
+    // 1. Une clé de sécurité est enrôlée : le mot de passe seul ne suffit plus.
+    //    Aucune session n'est créée ici — l'étape 2 (/api/auth/2fa/*) vérifiera
+    //    la signature du capteur avant d'ouvrir la session.
+    if (credentials.length > 0) {
+      return NextResponse.json({
+        success: true,
+        requiresTwoFactor: true,
+        user: { id: user.id, name: user.name, email: user.email, role: user.role as Role, roleLabel, avatarUrl: user.avatarUrl },
+        message: "Mot de passe vérifié. Validez avec votre clé de sécurité.",
+      });
+    }
+
+    // 2. Rôle sensible sans clé : selon la politique, session restreinte
+    //    (enforce) ou avertissement (prompt).
+    const sensitive = TWO_FACTOR_ROLES.includes(user.role as Role);
+    const policy = twoFactorPolicy();
+    const restricted = sensitive && policy === "enforce";
+
+    const { token, expiresAt } = await createSession(user.id, request, {
+      pendingTwoFactor: restricted,
+    });
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
     clearLoginFailures(throttleKey);
 
+    // Une entrée par connexion. « DENIED » signifie ici : session ouverte mais
+    // portée limitée à l'enrôlement du second facteur.
     await recordAudit({
       action: "AUTH_LOGIN",
-      actor: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role as Role,
-        avatarUrl: user.avatarUrl,
-        departmentId: user.departmentId,
-      },
+      outcome: restricted ? "DENIED" : "SUCCESS",
+      actor,
       request,
       entityType: "user",
       entityId: user.id,
-      summary: `Connexion réussie de ${user.name} (${ROLE_LABELS[user.role as Role] ?? user.role}).`,
-      details: { migrationMotDePasse: verification.needsRehash || undefined },
+      summary: restricted
+        ? `Connexion de ${user.name} (${roleLabel}) : session restreinte, second facteur obligatoire non configuré (accès aux données RH refusé).`
+        : `Connexion réussie de ${user.name} (${roleLabel}).`,
+      details: {
+        migrationMotDePasse: verification.needsRehash || undefined,
+        secondFacteurManquant: sensitive || undefined,
+        politique: sensitive ? policy : undefined,
+        portee: restricted ? "enrôlement du second facteur uniquement" : undefined,
+      },
     });
+
+    // Rôle sensible sans clé : signalé distinctement pour que le contrôle
+    // interne le retrouve en un filtre (politique souple : accès autorisé).
+    if (sensitive && !restricted) {
+      await recordAudit({
+        action: "AUTH_2FA_MISSING",
+        actor,
+        request,
+        entityType: "user",
+        entityId: user.id,
+        summary: `Second facteur non configuré pour ${user.name} (${roleLabel}) : accès autorisé mais clé de sécurité à enrôler sans délai.`,
+        details: { politique: policy },
+      });
+    }
 
     const response = NextResponse.json({
       success: true,
@@ -151,11 +201,17 @@ export async function POST(request: NextRequest) {
         name: user.name,
         email: user.email,
         role: user.role as Role,
-        roleLabel: ROLE_LABELS[user.role as Role] ?? user.role,
+        roleLabel,
         avatarUrl: user.avatarUrl,
       },
+      capabilities: capabilitiesFor(user.role as Role),
+      twoFactorWarning: sensitive && !restricted,
+      twoFactorPending: restricted,
+      twoFactorPolicy: policy,
       expiresAt,
-      message: "Connexion réussie.",
+      message: restricted
+        ? "Connexion limitée : configurez votre second facteur pour accéder aux données RH."
+        : "Connexion réussie.",
     });
 
     setSessionCookie(response, token, expiresAt);

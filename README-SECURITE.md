@@ -14,6 +14,7 @@ l'identité est prouvée, et ce qui reste à faire avant une mise en production 
 | L'auteur d'un pointage manuel était choisi par le client (`manualEditedBy`) | Repris de la session : impossible à falsifier |
 | Aucune protection contre les tentatives répétées ni contre le CSRF | Blocage 10 min après 5 échecs, contrôle d'origine sur toute écriture |
 | Aucune trace des actions sensibles (seul l'auteur d'un pointage manuel était conservé) | **Journal d'audit** en base (connexions, modifications RH, pointages, empreintes, exports), en écriture seule, sans aucun secret |
+| Un mot de passe volé suffisait pour entrer dans les écrans RH | **Second facteur** (clé de sécurité WebAuthn : Touch ID, Windows Hello, clé USB FIDO2) exigé pour les rôles administrateur et DRH |
 
 ## 2. Qui peut faire quoi
 
@@ -30,6 +31,7 @@ l'identité est prouvée, et ce qui reste à faire avant une mise en production 
 | Gérer les comptes utilisateurs | ✅ | ✅ (sauf comptes admin) | ❌ | ❌ |
 | Nommer un administrateur | ✅ | ❌ | ❌ | ❌ |
 | Consulter le journal d'audit | ✅ | ✅ | ❌ | ❌ |
+| Second facteur (clé de sécurité) | **obligatoire** | **obligatoire** | facultatif | facultatif |
 
 La matrice est définie une seule fois dans `src/lib/permissions.ts` et utilisée
 **côté serveur** (gardes API) comme côté navigateur (affichage). Le navigateur ne
@@ -56,6 +58,8 @@ façon.
 | Déconnecter quelqu'un immédiatement | Désactiver le compte (bascule) ou changer son mot de passe : toutes ses sessions sont révoquées |
 | Retrouver qui a modifié un pointage | Colonne « Manuel : … » dans Pointages & présences : l'auteur est le compte connecté |
 | Retrouver qui a fait quoi, et quand | Onglet **Journal d'audit** (administrateur et DRH) : filtres par action, résultat, auteur, période et recherche libre |
+| Ajouter le second facteur d'un compte | Menu utilisateur → « Sécurité du compte (second facteur) » → « Enregistrer une clé de sécurité » |
+| Clé de sécurité perdue | **Comptes & rôles** : révoquer la clé du compte concerné, puis la personne en enrôle une nouvelle |
 | Réinitialiser les données de démo | Bouton de la barre supérieure (rôles RH) ou `POST /api/seed` avec `x-seed-secret` |
 
 Après un `npm run db:push` sur une base issue de l'ancienne version, les mots de
@@ -98,27 +102,72 @@ Lecture réservée aux rôles **administrateur** et **DRH** ; le manager et la b
 reçoivent un 403, lui-même tracé en `ACCESS_DENIED`. Le détail technique (IP, agent
 utilisateur, identifiants) est replié par défaut dans l'interface.
 
-## 6. Variables d'environnement
+## 6. Second facteur (clé de sécurité)
+
+Le mot de passe seul ne protège pas un compte qui donne accès aux salaires et
+aux données de paie. Les rôles **administrateur** et **DRH** disposent donc d'un
+second facteur : une clé WebAuthn du poste de travail (Touch ID, Windows Hello,
+capteur Android, clé USB FIDO2). Le serveur ne conserve que la **clé publique** ;
+le gabarit biométrique et la clé privée ne quittent jamais l'appareil.
+
+**Comment ça marche**
+
+| Étape | Route | Ce qui se passe |
+| --- | --- | --- |
+| 1. Mot de passe | `POST /api/auth/login` | Vérifié (scrypt). Si une clé est enrôlée, **aucune session n'est créée** : la réponse réclame le second facteur. |
+| 2. Défi | `POST /api/auth/2fa/options` | Le mot de passe est revérifié, un défi est signé et scellé dans un cookie HttpOnly (5 min). Seules les clés **de ce compte** sont proposées. |
+| 3. Signature | `POST /api/auth/2fa/verify` | Le serveur vérifie la signature, l'origine, le domaine et le compteur anti-rejeu, **puis** ouvre la session. |
+| Enrôlement | `POST /api/auth/2fa/register/*` | Ajout d'une clé depuis le menu utilisateur → « Sécurité du compte ». |
+| Révocation | `DELETE /api/auth/2fa/revoke` | Perte ou remplacement d'une clé ; clé jamais supprimée, seulement datée (`revoked_at`). |
+
+**Politique serveur** (`TWO_FACTOR_POLICY`)
+
+- `prompt` (défaut) : une clé enrôlée est obligatoire à la connexion ; un compte
+  sensible qui n'en a pas encore est signalé (bannière + entrée de journal
+  `AUTH_2FA_MISSING`) mais peut se connecter pour aller en enrôler une.
+- `enforce` : un compte sensible sans clé n'obtient qu'une **session
+  restreinte** — l'enrôlement est la seule action possible, tout le reste
+  répond 403. C'est le réglage à utiliser en production, une fois les clés
+  distribuées.
+
+**Garde-fous**
+
+- La **dernière** clé d'un compte sensible ne peut pas être révoquée, même par
+  un administrateur : enrôlez la nouvelle clé d'abord.
+- Révoguer la clé d'un autre compte exige l'habilitation « gérer les comptes ».
+- Un compte désactivé, un défi expiré, une clé d'un autre utilisateur, une
+  signature d'un autre capteur, une origine étrangère et un rejeu de la même
+  assertion sont refusés et tracés (`AUTH_2FA_FAILED`).
+- Clé perdue : un administrateur révoque la clé depuis le compte concerné
+  (`?userId=`), l'utilisateur en enrôle une nouvelle à la connexion suivante.
+
+Toutes les étapes sont journalisées : `AUTH_2FA_REQUIRED`, `AUTH_2FA_SUCCESS`,
+`AUTH_2FA_FAILED`, `AUTH_2FA_BLOCKED`, `AUTH_2FA_ENROLL`, `AUTH_2FA_REVOKE` et
+`AUTH_2FA_MISSING`. Ni la clé publique, ni l'identifiant de clé, ni un mot de
+passe n'y figurent — vérifié par les tests.
+
+## 7. Variables d'environnement
 
 ```env
 DATABASE_URL=postgresql://…
 WEBAUTHN_SECRET=…        # signe les défis biométriques (obligatoire en production)
 SEED_SECRET=…            # protège la réinitialisation des données de démo
 SESSION_TTL_HOURS=12     # facultatif
+TWO_FACTOR_POLICY=prompt # prompt (défaut) | enforce (production)
 ```
 
 Si `WEBAUTHN_SECRET` et `SEED_SECRET` sont absents, une clé de développement est
 utilisée : acceptable en local, **à proscrire en production**.
 
-## 7. Reste à faire avant une utilisation réelle
+## 8. Reste à faire avant une utilisation réelle
 
 1. **HTTPS obligatoire** (cookies `Secure`, biométrie, RGPD).
 2. **Purge / archivage du journal d'audit** : la conservation est aujourd'hui
    illimitée. Définir une durée (12 mois recommandés), un export scellé avant
    purge, et retirer les adresses IP si elles ne sont pas nécessaires.
-3. **Second facteur** pour les rôles administrateur / DRH (WebAuthn est déjà en
-   place pour les salariés : la même brique peut servir à l'authentification des
-   gestionnaires).
+3. **Basculer `TWO_FACTOR_POLICY=enforce`** une fois les clés de sécurité des
+   administrateurs et de la DRH enrôlées (aujourd'hui, la politique est
+   « recommandée » pour ne pas bloquer la démonstration).
 4. **Limitation de débit** au niveau de l'hébergeur (le blocage actuel est en
    mémoire du processus, donc remis à zéro à chaque redéploiement ou en cas de
    plusieurs instances).
@@ -131,18 +180,25 @@ utilisée : acceptable en local, **à proscrire en production**.
    (`DELETE /api/biometrics/credentials`) et alternative non biométrique
    (repli code + PIN, déjà tracé comme non biométrique).
 
-## 8. Tests automatisés
+## 9. Tests automatisés
 
 ```bash
 npm run test:auth        # 65 vérifications : accès, rôles, sessions, abus, garde-fous
 npm run test:biometric   # 46 vérifications : capteur WebAuthn, anti-forge, anti-rejeu
 npm run test:audit       # 65 vérifications : accès au journal, immuabilité, secrets, filtres
+npm run test:twofa       # 76 vérifications : second facteur, anti-rejeu, session restreinte
 ```
 
-Les trois suites s'exécutent contre une instance réelle de l'application et
+En politique stricte (`TWO_FACTOR_POLICY=enforce npm run dev`), la suite 2FA
+vérifie en plus le parcours réel de premier démarrage (l'administrateur enrôle
+sa clé depuis une session restreinte) : **82 vérifications**.
+
+Les quatre suites s'exécutent contre une instance réelle de l'application et
 couvrent notamment : refus d'accès sans session, refus d'un mauvais mot de passe,
 cloisonnement manager / borne, blocage après tentatives répétées, refus CSRF,
 révocation des sessions, protection du dernier administrateur, refus d'un
-pointage biométrique forgé, refus d'un pointage au nom d'un collègue, et
-vérification que chaque action sensible laisse une trace exploitable — sans
-jamais y écrire un mot de passe, un PIN ou une clé d'empreinte.
+pointage biométrique forgé, refus d'un pointage au nom d'un collègue, refus de
+toute connexion sans la clé de sécurité dès qu'un compte sensible en possède
+une, et vérification que chaque action sensible laisse une trace exploitable —
+sans jamais y écrire un mot de passe, un PIN, une clé privée ou un gabarit
+biométrique.

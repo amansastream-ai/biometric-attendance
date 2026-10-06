@@ -12,6 +12,7 @@ import { TimesheetsTab } from "@/components/tabs/TimesheetsTab";
 import { ReportsTab } from "@/components/tabs/ReportsTab";
 import { DepartmentsTab } from "@/components/tabs/DepartmentsTab";
 import { UsersTab } from "@/components/tabs/UsersTab";
+import { TwoFactorSetup } from "@/components/TwoFactorSetup";
 import { AuditTab } from "@/components/tabs/AuditTab";
 
 import { LoginScreen } from "@/components/LoginScreen";
@@ -22,6 +23,7 @@ import { DispatchReportModal } from "@/components/DispatchReportModal";
 import { EmployeeModal } from "@/components/EmployeeModal";
 import { DepartmentModal } from "@/components/DepartmentModal";
 
+import { fetchTwoFactorStatus, type TwoFactorStatus } from "@/lib/two-factor-client";
 import {
   fetchSession,
   logout as logoutRequest,
@@ -29,7 +31,16 @@ import {
   type SessionState,
 } from "@/lib/api-client";
 import type { Capability, Role } from "@/lib/permissions";
-import { Menu, X, Fingerprint, Monitor, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  ShieldAlert,
+  Menu,
+  X,
+  Fingerprint,
+  Monitor,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 
 type SessionUser = NonNullable<SessionState["user"]>;
 
@@ -66,6 +77,10 @@ export default function HomePage() {
 
   // Modals state
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+
+  // Second facteur : état des clés + fenêtre (forcée si session restreinte)
+  const [twoFactorStatus, setTwoFactorStatus] = useState<TwoFactorStatus | null>(null);
+  const [twoFactorMode, setTwoFactorMode] = useState<"forced" | "manage" | null>(null);
   const [isEnrollmentOpen, setIsEnrollmentOpen] = useState(false);
   const [enrollmentTargetEmp, setEnrollmentTargetEmp] = useState<Employee | null>(null);
 
@@ -81,6 +96,30 @@ export default function HomePage() {
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
 
   const isKioskRole = sessionUser?.role === "kiosk";
+  const twoFactorMissing =
+    Boolean(capabilities?.twoFactorRequired) && twoFactorStatus != null && !twoFactorStatus.enabled;
+
+  // État des clés de sécurité du compte connecté (rôles sensibles uniquement).
+  // Aucun setState synchrone ici : l'état n'est lu que lorsque la session
+  // expose la capacité « second facteur obligatoire ».
+  useEffect(() => {
+    let cancelled = false;
+    if (!sessionUser || !capabilities?.twoFactorRequired) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    fetchTwoFactorStatus()
+      .then((status) => {
+        if (!cancelled) setTwoFactorStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setTwoFactorStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUser, capabilities?.twoFactorRequired]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -96,6 +135,13 @@ export default function HomePage() {
     }
     setSessionUser(state.user);
     setCapabilities(state.capabilities);
+    if (state.twoFactorPending) {
+      // Session ouverte avant le second facteur : on force l'enrôlement.
+      setTwoFactorMode("forced");
+      setSessionNotice(
+        "Second facteur obligatoire pour votre rôle : enregistrez une clé de sécurité pour accéder aux données RH."
+      );
+    }
     if (state.user.role === "kiosk") {
       // Une borne n'a pas accès aux données RH : elle ouvre directement le terminal
       setIsStandaloneKiosk(true);
@@ -245,8 +291,8 @@ export default function HomePage() {
           </div>
         )}
         <LoginScreen
-          onAuthenticated={() => {
-            setSessionNotice(null);
+          onAuthenticated={(notice) => {
+            setSessionNotice(notice ?? null);
             refreshSession();
           }}
         />
@@ -341,6 +387,7 @@ export default function HomePage() {
             onResetSeed={handleResetSeed}
             onNavigateUsers={() => setCurrentTab("users")}
             onChangePassword={() => setIsPasswordModalOpen(true)}
+            onOpenSecurity={() => setTwoFactorMode("manage")}
             onLogout={handleLogout}
           />
 
@@ -392,6 +439,23 @@ export default function HomePage() {
 
             {/* Main Content View */}
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+                {twoFactorMissing && !twoFactorMode && (
+                  <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-3">
+                    <span className="flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+                      Votre rôle donne accès aux données RH mais aucune clé de sécurité n&apos;est
+                      enregistrée : le second facteur n&apos;est pas encore actif sur ce compte.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTwoFactorMode("manage")}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-100 font-semibold text-[11px] transition"
+                    >
+                      Configurer maintenant
+                    </button>
+                  </div>
+                )}
               {/* Mobile menu trigger */}
               <div className="lg:hidden flex items-center justify-between pb-2 border-b border-slate-800">
                 <button
@@ -557,6 +621,25 @@ export default function HomePage() {
       )}
 
       {/* MODALS */}
+      {twoFactorMode && sessionUser && (
+        <TwoFactorSetup
+          isOpen
+          mode={twoFactorMode}
+          onClose={() => setTwoFactorMode(null)}
+          onStatusChanged={(status) => {
+            setTwoFactorStatus(status);
+            if (status.enabled) {
+              setSessionNotice(null);
+              // La session restreinte vient d'être déverrouillée : on recharge
+              // la session pour que l'API reflète le nouvel état.
+              if (twoFactorMode === "forced") refreshSession();
+            }
+          }}
+          onNotify={showToast}
+          onLogout={handleLogout}
+        />
+      )}
+
       <PasswordModal
         isOpen={isPasswordModalOpen}
         onClose={() => setIsPasswordModalOpen(false)}

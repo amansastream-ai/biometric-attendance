@@ -38,6 +38,13 @@ export type Actor = {
   role: Role;
   avatarUrl: string | null;
   departmentId: number | null;
+  /** Identifiant de la session courante (permet de la « déverrouiller »). */
+  sessionId?: number;
+  /**
+   * Session créée avant le second facteur : elle n'ouvre que l'enrôlement de
+   * la clé de sécurité. Absent = session pleinement authentifiée.
+   */
+  twoFactorPending?: boolean;
 };
 
 /* ------------------------------------------------------------------ */
@@ -109,13 +116,15 @@ const hashToken = (token: string) => createHash("sha256").update(token).digest("
 
 export async function createSession(
   userId: number,
-  request: NextRequest
+  request: NextRequest,
+  { pendingTwoFactor = false }: { pendingTwoFactor?: boolean } = {}
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_HOURS * 3600 * 1000);
 
   await db.insert(sessions).values({
     userId,
+    pendingTwoFactor,
     tokenHash: hashToken(token),
     expiresAt,
     userAgent: request.headers.get("user-agent")?.slice(0, 250) ?? null,
@@ -165,6 +174,7 @@ export async function currentActor(request: NextRequest): Promise<Actor | null> 
   const [row] = await db
     .select({
       sessionId: sessions.id,
+      pendingTwoFactor: sessions.pendingTwoFactor,
       id: users.id,
       name: users.name,
       email: users.email,
@@ -191,7 +201,17 @@ export async function currentActor(request: NextRequest): Promise<Actor | null> 
     role: row.role as Role,
     avatarUrl: row.avatarUrl,
     departmentId: row.departmentId,
+    sessionId: row.sessionId,
+    twoFactorPending: row.pendingTwoFactor,
   };
+}
+
+/** Lève la restriction « second facteur » d'une session après enrôlement. */
+export async function clearPendingTwoFactor(sessionId: number): Promise<void> {
+  await db
+    .update(sessions)
+    .set({ pendingTwoFactor: false })
+    .where(eq(sessions.id, sessionId));
 }
 
 export async function destroySession(request: NextRequest): Promise<void> {
@@ -259,7 +279,8 @@ export type AuditContext = {
 export async function requireActor(
   request: NextRequest,
   roles?: Role[],
-  audit?: AuditContext
+  audit?: AuditContext,
+  options?: { allowPendingTwoFactor?: boolean }
 ): Promise<{ actor: Actor } | { error: Response }> {
   if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method) && !sameOrigin(request)) {
     if (audit) {
@@ -282,6 +303,31 @@ export async function requireActor(
       error: jsonError(
         "Authentification requise : connectez-vous pour accéder à cette ressource.",
         401
+      ),
+    };
+  }
+
+  // Session créée avant le second facteur : seuls les écrans d'enrôlement y
+  // sont accessibles. Sans cette garde, un mot de passe volé suffirait.
+  if (actor.twoFactorPending && !options?.allowPendingTwoFactor) {
+    if (audit) {
+      await recordAudit({
+        action: "ACCESS_DENIED",
+        outcome: "DENIED",
+        actor,
+        request,
+        entityType: audit.entityType,
+        entityId: audit.entityId,
+        summary: `Accès refusé à ${actor.name} : second facteur non encore configuré (tentative de ${
+          audit.label ?? audit.action
+        }).`,
+        details: { action: audit.action, motif: "second facteur en attente" },
+      });
+    }
+    return {
+      error: jsonError(
+        "Second facteur à configurer : enrôlez votre clé de sécurité pour accéder aux données RH.",
+        403
       ),
     };
   }

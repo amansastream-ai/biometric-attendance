@@ -19,6 +19,7 @@ interface NavbarProps {
   onResetSeed: () => void;
   onNavigateUsers: () => void;
   onChangePassword: () => void;
+  onOpenSecurity: () => void;
   onLogout: () => void;
 }
 
@@ -30,6 +31,7 @@ export function Navbar({
   onResetSeed,
   onNavigateUsers,
   onChangePassword,
+  onOpenSecurity,
   onLogout,
 }: NavbarProps) {
   const [currentTime, setCurrentTime] = useState("");
@@ -117,8 +119,10 @@ export function Navbar({
               email: currentUser.email,
             }}
             canManageUsers={capabilities.manageUsers}
+            twoFactorRequired={capabilities.twoFactorRequired}
             onNavigateUsers={onNavigateUsers}
             onChangePassword={onChangePassword}
+            onOpenSecurity={onOpenSecurity}
             onLogout={onLogout}
           />
         </div>

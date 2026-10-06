@@ -1,22 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentActor, destroySession, jsonError, sameOrigin } from "@/lib/auth";
-import { ROLE_LABELS, can, type Capability, type Role } from "@/lib/permissions";
+import { ROLE_LABELS, capabilitiesFor, type Role } from "@/lib/permissions";
+import { twoFactorPolicy } from "@/lib/webauthn";
 
 export const dynamic = "force-dynamic";
-
-const CAPABILITIES: Capability[] = [
-  "viewPortal",
-  "punchTerminal",
-  "manageEmployees",
-  "deleteRecords",
-  "enrollBiometrics",
-  "manualPunch",
-  "manageDepartments",
-  "dispatchReports",
-  "manageUsers",
-  "viewAudit",
-  "promoteAdmin",
-];
 
 /** Session courante : qui suis-je, et que puis-je faire ? */
 export async function GET(request: NextRequest) {
@@ -25,10 +12,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, authenticated: false, user: null });
   }
 
-  const capabilities = Object.fromEntries(
-    CAPABILITIES.map((capability) => [capability, can(actor.role, capability)])
-  );
-
   return NextResponse.json({
     success: true,
     authenticated: true,
@@ -36,7 +19,11 @@ export async function GET(request: NextRequest) {
       ...actor,
       roleLabel: ROLE_LABELS[actor.role as Role] ?? actor.role,
     },
-    capabilities,
+    capabilities: capabilitiesFor(actor.role),
+    // Session créée avant le second facteur : l'interface doit forcer
+    // l'enrôlement de la clé de sécurité.
+    twoFactorPending: Boolean(actor.twoFactorPending),
+    twoFactorPolicy: twoFactorPolicy(),
   });
 }
 
