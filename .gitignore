@@ -18,3 +18,9 @@ build/
 *.tsbuildinfo
 .DS_Store
 npm-debug.log*
+
+# Motion design — intermédiaires de rendu (les MP4 livrés sont dans motion/export)
+motion/build/
+motion/previews/
+motion/tmp-*.mjs
+motion/node_modules/
