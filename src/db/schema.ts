@@ -4,12 +4,35 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  // Empreinte scrypt du mot de passe (« scrypt$N$r$p$sel$empreinte »).
+  // Jamais de mot de passe en clair : voir src/lib/auth.ts
   password: text("password").notNull(),
   role: text("role").notNull().default("drh"), // 'admin' | 'drh' | 'manager' | 'kiosk'
   departmentId: integer("department_id"),
   avatarUrl: text("avatar_url"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Sessions authentifiées : le jeton du cookie n'est stocké que haché, il peut
+ * donc être révoqué (déconnexion, changement de mot de passe, désactivation).
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    userAgent: text("user_agent"),
+    ipAddress: text("ip_address"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("sessions_user_idx").on(table.userId)]
+);
 
 export const departments = pgTable("departments", {
   id: serial("id").primaryKey(),

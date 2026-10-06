@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { reportDispatches } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const reports = await db
       .select()
       .from(reportDispatches)
@@ -19,6 +24,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const body = await request.json();
     const {
       title,
@@ -79,6 +87,9 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {

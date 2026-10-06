@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:local": "node scripts/pglite-dev-server.mjs",
-    "test:biometric": "node scripts/biometric-e2e.mjs"
+    "test:biometric": "node scripts/biometric-e2e.mjs",
+    "test:auth": "node scripts/auth-e2e.mjs"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",

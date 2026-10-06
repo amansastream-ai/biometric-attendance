@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { biometricCredentials, employees } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { clearChallengeCookie, getRpConfig, readChallengeCookie } from "@/lib/webauthn";
+import { requireActor } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: NextRequest) {
   try {
+    const guard = await requireActor(request, ["admin", "drh"]);
+    if ("error" in guard) return guard.error;
+
     const body = await request.json().catch(() => ({}));
     const employeeId = Number(body?.employeeId);
     const finger: string = body?.finger || "Pouce Droit";

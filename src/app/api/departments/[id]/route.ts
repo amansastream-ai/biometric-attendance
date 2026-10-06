@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { departments, employees } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { WRITE_ROLES } from "@/lib/permissions";
 
 export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const deptId = Number(id);
     const body = await request.json();
@@ -44,6 +49,9 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const deptId = Number(id);
 

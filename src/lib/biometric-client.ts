@@ -13,6 +13,7 @@ import type {
   RegistrationResponseJSON,
 } from "@simplewebauthn/browser";
 import type { Employee, PunchRecord } from "@/types";
+import { notifySessionExpired } from "@/lib/api-client";
 
 /**
  * Passerelle navigateur <-> API biométrique.
@@ -80,7 +81,10 @@ export function describeWebAuthnError(error: unknown, support?: BiometricSupport
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   try {
-    return (await response.json()) as Record<string, unknown>;
+    const data = (await response.json()) as Record<string, unknown>;
+    // Session expirée pendant un pointage : on ramène à l'écran de connexion
+    if (response.status === 401) notifySessionExpired();
+    return data;
   } catch {
     return {};
   }

@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { biometricCredentials } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { getRpConfig, setChallengeCookie } from "@/lib/webauthn";
+import { requireActor } from "@/lib/auth";
+import { TERMINAL_ROLES } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,9 @@ function parseTransports(value: string): AuthenticatorTransportFuture[] | undefi
  */
 export async function POST(request: NextRequest) {
   try {
+    const guard = await requireActor(request, TERMINAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const body = await request.json().catch(() => ({}));
     const employeeId = body?.employeeId ? Number(body.employeeId) : null;
 

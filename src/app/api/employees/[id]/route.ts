@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { employees, punchRecords } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const empId = Number(id);
     const [emp] = await db.select().from(employees).where(eq(employees.id, empId));
@@ -25,6 +30,9 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const empId = Number(id);
     const body = await request.json();
@@ -98,6 +106,9 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const empId = Number(id);
 

@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { employees, departments, punchRecords } from "@/db/schema";
 import { gte, lte, and, eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   try {
+    // Les exports contiennent des données de paie : réservés aux rôles RH
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") || "THIS_MONTH";
     const departmentId = searchParams.get("departmentId");

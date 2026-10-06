@@ -2,10 +2,11 @@
 
 Cette application est une application Next.js full-stack utilisant PostgreSQL et Drizzle ORM.
 
-> 🔐 **Nouveauté importante** : le pointage par empreinte repose désormais sur une
-> **vraie vérification biométrique WebAuthn/FIDO2** (le capteur signe, le serveur
-> vérifie). Voir [`README-BIOMETRIE.md`](./README-BIOMETRIE.md) pour le
-> fonctionnement, les limites et le modèle de sécurité.
+> 🔐 **Sécurité** : le pointage par empreinte repose sur une **vraie vérification
+> biométrique WebAuthn/FIDO2** (le capteur signe, le serveur vérifie) et les
+> écrans DRH sont **protégés par authentification et rôles**. Voir
+> [`README-BIOMETRIE.md`](./README-BIOMETRIE.md) (empreintes) et
+> [`README-SECURITE.md`](./README-SECURITE.md) (comptes, rôles, sessions).
 
 ## 1. PostgreSQL
 
@@ -53,6 +54,25 @@ Ajoute les variables d'environnement :
 - `DATABASE_URL` = URL PostgreSQL Neon
 - `WEBAUTHN_SECRET` = une longue valeur secrète (obligatoire : elle signe les défis d'enrôlement et de pointage)
 - `SEED_SECRET` = une longue valeur secrète de ton choix
+- `SESSION_TTL_HOURS` = durée de vie d'une session en heures (facultatif, 12 par défaut)
+
+## 5 bis. Se connecter la première fois
+
+L'application affiche un écran de connexion : **aucune donnée RH n'est accessible
+sans compte**. Les comptes de démonstration créés par le seed sont :
+
+| Email | Mot de passe | Rôle |
+| --- | --- | --- |
+| `admin@pointage-biometrique.fr` | `password123` | Administrateur système |
+| `drh@pointage-biometrique.fr` | `password123` | Direction RH & Paie |
+| `manager@pointage-biometrique.fr` | `password123` | Manager de pôle (lecture seule) |
+| `kiosk@pointage-biometrique.fr` | `password123` | Borne de pointage |
+
+**Avant toute utilisation réelle** : connecte-toi, ouvre le menu utilisateur →
+« Modifier mon mot de passe », puis crée les comptes nominaux dans **Comptes &
+rôles** et désactive ou supprime les comptes de démonstration. Les mots de passe
+sont stockés hachés (scrypt + sel) et les sessions sont révocables
+individuellement (désactiver un compte déconnecte immédiatement l'utilisateur).
 
 ## 4. Créer les tables PostgreSQL
 
@@ -111,12 +131,19 @@ rejeux et des pointages au nom d'un collègue.
 
 ## Important avant une utilisation réelle
 
-Le projet fourni est une base de démonstration. Avant de l'utiliser avec de vrais employés, il faut notamment :
+Le projet fourni est une base de démonstration. Déjà en place : biométrie vérifiée
+par le capteur, authentification, mots de passe hachés, rôles, sessions
+révocables, protection anti-CSRF et anti-force brute (voir
+`README-SECURITE.md`).
 
-- remplacer les mots de passe en clair par un vrai système de hash/session et
-  protéger les écrans DRH (la biométrie est vérifiée, mais l'accès à
-  l'administration ne l'est pas encore) ;
-- sécuriser les routes API (authentification, rôles, journalisation) ;
+Avant de l'utiliser avec de vrais employés, il reste notamment à :
+
+- activer **HTTPS** partout (cookies `Secure`, biométrie, RGPD) et changer les
+  comptes/mots de passe de démonstration ;
+- mettre en place un **journal d'audit** des consultations et modifications ;
+- ajouter un **second facteur** pour les rôles administrateur et DRH ;
+- déplacer la limitation des tentatives de connexion vers un stockage partagé
+  (Redis/base) si l'application tourne sur plusieurs instances ;
 - documenter la conformité RGPD : information des salariés, base légale,
   durée de conservation, procédure de révocation des empreintes
   (`DELETE /api/biometrics/credentials`) et alternative non biométrique ;

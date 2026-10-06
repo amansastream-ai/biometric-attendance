@@ -14,6 +14,8 @@ import {
   validateSequence,
   type PunchType,
 } from "@/lib/punching";
+import { requireActor } from "@/lib/auth";
+import { TERMINAL_ROLES } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,10 @@ function errorResponse(message: string, status: number, request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    // La borne doit être ouverte par un compte autorisé (kiosque inclus)
+    const guard = await requireActor(request, TERMINAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const body = await request.json().catch(() => ({}));
     const response = body?.response as AuthenticationResponseJSON | undefined;
     const requestedType: PunchType | undefined =

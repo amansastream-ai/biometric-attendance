@@ -2,20 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { punchRecords } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { WRITE_ROLES } from "@/lib/permissions";
 
 export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+    const { actor } = guard;
+
     const { id } = await context.params;
     const punchId = Number(id);
     const body = await request.json();
-    const { punchTime, type, status, manualReason, manualEditedBy, notes } = body;
+    const { punchTime, type, status, manualReason, notes } = body;
 
     const updateData: Record<string, unknown> = {
       isManual: true,
-      manualEditedBy: manualEditedBy || "DRH",
+      // Auteur repris de la session (non falsifiable par le client)
+      manualEditedBy: actor.name,
     };
 
     if (punchTime) updateData.punchTime = new Date(punchTime);
@@ -46,6 +53,10 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Supprimer un pointage est une opération sensible : réservée aux rôles RH
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { id } = await context.params;
     const punchId = Number(id);
 

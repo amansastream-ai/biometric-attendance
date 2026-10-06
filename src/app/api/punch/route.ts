@@ -11,11 +11,16 @@ import {
   type PunchMethod,
   type PunchType,
 } from "@/lib/punching";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
 
 const PUNCH_TYPES: PunchType[] = ["IN", "OUT", "BREAK_START", "BREAK_END"];
 
 export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get("employeeId");
     const departmentId = searchParams.get("departmentId");
@@ -120,6 +125,12 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Seuls les rôles RH peuvent saisir ou régulariser un pointage non
+    // biométrique (l'empreinte passe par /api/biometrics/authenticate/verify).
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+    const actor = guard.actor;
+
     const body = await request.json();
     const {
       employeeId,
@@ -128,7 +139,6 @@ export async function POST(request: NextRequest) {
       kioskLocation = "Borne Entrée Principale",
       isManual = false,
       manualReason,
-      manualEditedBy,
       punchTime: customPunchTime,
       notes,
       pin,
@@ -233,7 +243,8 @@ export async function POST(request: NextRequest) {
       kioskLocation,
       isManual: resolvedMethod === "MANUAL_DRH",
       manualReason: manualReason || "Régularisation manuelle DRH",
-      manualEditedBy: manualEditedBy || "Direction RH",
+      // L'auteur réel est repris de la session : il ne peut pas être falsifié
+      manualEditedBy: actor.name,
       notes: resolvedNotes,
       punchTime: punchDate,
     });

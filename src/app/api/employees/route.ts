@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { employees, departments, punchRecords } from "@/db/schema";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES, WRITE_ROLES } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const departmentId = searchParams.get("departmentId");
     const search = searchParams.get("search");
@@ -111,6 +116,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await requireActor(request, WRITE_ROLES);
+    if ("error" in guard) return guard.error;
+
     const body = await request.json();
     const {
       firstName,

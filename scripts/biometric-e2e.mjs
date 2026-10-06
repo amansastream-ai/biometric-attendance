@@ -257,6 +257,30 @@ class CookieJar {
 
 const jar = new CookieJar();
 
+/** Requête sans session (pour vérifier que les routes protégées répondent 401). */
+async function anonymousApi(path, { method = "GET", body, headers = {} } = {}) {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: {
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...headers,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json = {};
+  try {
+    json = await response.json();
+  } catch {
+    /* pas de corps JSON */
+  }
+  return { status: response.status, json };
+}
+
+/** Ouvre une session (le cookie est conservé dans le pot commun). */
+async function login(email, password) {
+  return api("/api/auth/login", { method: "POST", body: { email, password } });
+}
+
 async function api(path, { method = "GET", body, headers = {} } = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -337,6 +361,51 @@ async function enrolledCredentialCount(employeeId) {
 async function main() {
   console.log(`\n🧪 Test biométrique — ${BASE_URL} (RP ID: ${RP_ID})\n`);
   await pgClient.connect();
+
+  /* ---------- 0. Accès protégé ---------- */
+  section("0. Le pointage biométrique exige une session authentifiée");
+  {
+    const employees = await anonymousApi("/api/employees");
+    check("données salariés refusées sans session (401)", employees.status === 401, `reçu ${employees.status}`);
+
+    const registerOptions = await anonymousApi("/api/biometrics/register/options", {
+      method: "POST",
+      body: { employeeId: 1 },
+    });
+    check(
+      "enrôlement biométrique refusé sans session (401)",
+      registerOptions.status === 401,
+      `reçu ${registerOptions.status}`
+    );
+
+    const authenticateOptions = await anonymousApi("/api/biometrics/authenticate/options", {
+      method: "POST",
+      body: {},
+    });
+    check(
+      "pointage refusé sans session (401)",
+      authenticateOptions.status === 401,
+      `reçu ${authenticateOptions.status}`
+    );
+
+    // CSRF : une origine étrangère est refusée même avec des identifiants valides
+    const crossOrigin = await anonymousApi("/api/auth/login", {
+      method: "POST",
+      headers: { Origin: "https://attaquant.example" },
+      body: { email: "drh@pointage-biometrique.fr", password: "password123" },
+    });
+    check("connexion depuis une origine étrangère refusée (403)", crossOrigin.status === 403);
+
+    const badLogin = await login("drh@pointage-biometrique.fr", "mauvais-mot-de-passe");
+    check("connexion avec un mauvais mot de passe refusée (401)", badLogin.status === 401);
+
+    const goodLogin = await login("drh@pointage-biometrique.fr", "password123");
+    check(
+      "connexion DRH réussie (session ouverte)",
+      goodLogin.status === 200 && goodLogin.json.success === true,
+      JSON.stringify(goodLogin.json).slice(0, 160)
+    );
+  }
 
   const employeesResponse = await api("/api/employees");
   const employees = employeesResponse.json.employees || [];

@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { biometricCredentials, employees } from "@/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { requireActor } from "@/lib/auth";
+import { PORTAL_ROLES } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 /** Liste les empreintes enrôlées (utile pour l'écran d'enrôlement et l'audit RGPD). */
 export async function GET(request: NextRequest) {
   try {
+    const guard = await requireActor(request, PORTAL_ROLES);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const employeeId = Number(searchParams.get("employeeId"));
 
@@ -55,6 +60,9 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    const guard = await requireActor(request, ["admin", "drh"]);
+    if ("error" in guard) return guard.error;
+
     const { searchParams } = new URL(request.url);
     const credentialId = Number(searchParams.get("id"));
     const employeeId = Number(searchParams.get("employeeId"));

@@ -1,6 +1,7 @@
 import { db } from "./index";
 import { users, departments, employees, punchRecords, reportDispatches } from "./schema";
 import { sql } from "drizzle-orm";
+import { hashPassword } from "@/lib/auth";
 
 export async function seedDatabase() {
   // Check if already seeded
@@ -16,28 +17,36 @@ export async function seedDatabase() {
   // l'onglet Salariés > « Enrôler » (WebAuthn). L'historique de pointage
   // ci-dessous est marqué DEMO_SEED et ne prétend pas venir d'un capteur.
 
-  // 1. Users
+  // 1. Users — les mots de passe sont hachés (scrypt) avant insertion
+  const demoPassword = await hashPassword("password123");
   await db.insert(users).values([
     {
       name: "Sophie Laurent (DRH)",
       email: "drh@pointage-biometrique.fr",
-      password: "password123",
+      password: demoPassword,
       role: "drh",
       avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
     },
     {
       name: "Thomas Moreau (Manager)",
       email: "manager@pointage-biometrique.fr",
-      password: "password123",
+      password: demoPassword,
       role: "manager",
       avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
     },
     {
       name: "Terminal Borne Kiosk",
       email: "kiosk@pointage-biometrique.fr",
-      password: "password123",
+      password: demoPassword,
       role: "kiosk",
       avatarUrl: "https://images.unsplash.com/photo-1589254065878-42c9da997008?w=150&auto=format&fit=crop&q=80",
+    },
+    {
+      name: "Administrateur système",
+      email: "admin@pointage-biometrique.fr",
+      password: demoPassword,
+      role: "admin",
+      avatarUrl: null,
     },
   ]);
 

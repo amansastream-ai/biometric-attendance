@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { biometricCredentials, employees } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { RP_NAME, getRpConfig, setChallengeCookie } from "@/lib/webauthn";
+import { requireActor } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ function parseTransports(value: string): AuthenticatorTransportFuture[] | undefi
  */
 export async function POST(request: NextRequest) {
   try {
+    // L'enrôlement d'une empreinte est réservé aux rôles RH
+    const guard = await requireActor(request, ["admin", "drh"]);
+    if ("error" in guard) return guard.error;
+
     const body = await request.json().catch(() => ({}));
     const employeeId = Number(body?.employeeId);
 
