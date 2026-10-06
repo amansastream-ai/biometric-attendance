@@ -8,22 +8,28 @@ import {
   KeyRound,
   UserCog,
   ShieldCheck,
+  ShieldAlert,
   Clock,
 } from "lucide-react";
 
 interface UserMenuProps {
   user: { name: string; role: Role; avatarUrl?: string | null; email: string };
   canManageUsers: boolean;
+  /** Rôle sensible : la clé de sécurité (second facteur) est exigée. */
+  twoFactorRequired: boolean;
   onNavigateUsers: () => void;
   onChangePassword: () => void;
+  onOpenSecurity: () => void;
   onLogout: () => void;
 }
 
 export function UserMenu({
   user,
   canManageUsers,
+  twoFactorRequired,
   onNavigateUsers,
   onChangePassword,
+  onOpenSecurity,
   onLogout,
 }: UserMenuProps) {
   const [open, setOpen] = useState(false);
@@ -79,6 +85,20 @@ export function UserMenu({
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" />
                 Modifier mon mot de passe
               </button>
+
+              {twoFactorRequired && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenSecurity();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs text-slate-300 hover:bg-slate-800 transition"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                  Sécurité du compte (second facteur)
+                </button>
+              )}
 
               {canManageUsers && (
                 <button

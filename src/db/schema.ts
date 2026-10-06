@@ -12,8 +12,41 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at"),
+  // Second facteur (clé WebAuthn / Touch ID / Windows Hello) : obligatoire
+  // pour les rôles sensibles dès qu'une clé est enrôlée (voir
+  // src/app/api/auth/2fa/*). Le drapeau évite une requête à chaque connexion.
+  twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
+  twoFactorEnrolledAt: timestamp("two_factor_enrolled_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Clés de sécurité du **compte utilisateur** (second facteur), distinctes des
+ * empreintes des salariés : ici, la clé protège l'accès aux écrans RH.
+ *
+ * Seule la clé publique est conservée : elle permet au serveur de vérifier la
+ * signature du capteur au moment de la connexion. Aucun gabarit biométrique,
+ * aucun secret ne quitte le poste de l'utilisateur.
+ */
+export const userCredentials = pgTable(
+  "user_credentials",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    credentialId: text("credential_id").notNull().unique(),
+    publicKey: text("public_key").notNull(),
+    counter: integer("counter").notNull().default(0),
+    transports: text("transports").notNull().default(""),
+    deviceType: text("device_type").notNull().default("singleDevice"),
+    backedUp: boolean("backed_up").notNull().default(false),
+    aaguid: text("aaguid"),
+    label: text("label"), // ex: « MacBook de Sophie », « YubiKey bureau »
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("user_credentials_user_idx").on(table.userId)]
+);
 
 /**
  * Sessions authentifiées : le jeton du cookie n'est stocké que haché, il peut
@@ -29,6 +62,9 @@ export const sessions = pgTable(
     userAgent: text("user_agent"),
     ipAddress: text("ip_address"),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    // Session « en attente de second facteur » : elle ouvre uniquement
+    // l'enrôlement de la clé, jamais les données RH (voir requireActor).
+    pendingTwoFactor: boolean("pending_two_factor").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("sessions_user_idx").on(table.userId)]

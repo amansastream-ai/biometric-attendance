@@ -14,6 +14,13 @@ export type AuditAction =
   | "AUTH_LOGIN_BLOCKED"
   | "AUTH_LOGOUT"
   | "AUTH_PASSWORD_CHANGE"
+  | "AUTH_2FA_REQUIRED"
+  | "AUTH_2FA_SUCCESS"
+  | "AUTH_2FA_FAILED"
+  | "AUTH_2FA_BLOCKED"
+  | "AUTH_2FA_ENROLL"
+  | "AUTH_2FA_REVOKE"
+  | "AUTH_2FA_MISSING"
   | "USER_CREATE"
   | "USER_UPDATE"
   | "USER_DELETE"
@@ -43,6 +50,13 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   AUTH_LOGIN_BLOCKED: "Connexion bloquée (tentatives répétées)",
   AUTH_LOGOUT: "Déconnexion",
   AUTH_PASSWORD_CHANGE: "Changement de mot de passe",
+  AUTH_2FA_REQUIRED: "Second facteur demandé",
+  AUTH_2FA_SUCCESS: "Second facteur validé",
+  AUTH_2FA_FAILED: "Second facteur refusé",
+  AUTH_2FA_BLOCKED: "Second facteur bloqué (tentatives répétées)",
+  AUTH_2FA_ENROLL: "Enrôlement d'une clé de sécurité",
+  AUTH_2FA_REVOKE: "Révocation d'une clé de sécurité",
+  AUTH_2FA_MISSING: "Connexion sans second facteur (non configuré)",
   USER_CREATE: "Création de compte",
   USER_UPDATE: "Modification de compte",
   USER_DELETE: "Suppression de compte",
@@ -104,4 +118,5 @@ export const AUDIT_ENTITY_LABELS: Record<string, string> = {
   report: "Envoi de fichier",
   seed: "Données de démonstration",
   session: "Session",
+  user_credential: "Clé de sécurité",
 };
