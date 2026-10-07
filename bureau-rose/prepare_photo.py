@@ -125,19 +125,49 @@ def crop_window(iw, ih, out_w, out_h, focus, anchor_x, anchor_y, zoom, rule):
     return base, left, top
 
 
+# Cadrages prêts à l'emploi (zoom, ancre verticale du visage, règle du regard)
+PRESETS = {
+    # plan buste élégant : des épaules au-dessus de la tête
+    "buste": dict(zoom=1.00, anchor_y=0.44, rule="right"),
+    # serré : le visage occupe une grande partie de la carte (impact téléphone)
+    "serre": dict(zoom=1.34, anchor_y=0.42, rule="right"),
+    # large : plus de mur autour d'elle, rendu éditorial
+    "large": dict(zoom=0.88, anchor_y=0.48, rule="right"),
+    # cadrage centré, sans détection (photo déjà bien cadrée)
+    "centre": dict(zoom=1.00, anchor_y=0.44, rule="none", no_smart=True),
+}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Prépare le portrait de la carte Bureau Rose")
+    ap.add_argument("--preset", choices=sorted(PRESETS), default="buste",
+                    help="cadrage prêt à l'emploi (défaut : buste)")
     ap.add_argument("--src", required=True, help="photo d'origine (tout format)")
     ap.add_argument("--out", default=os.path.join(ROOT, "assets", "portrait_card.png"))
     ap.add_argument("--preview", default=os.path.join(ROOT, "livrables", "portrait-card-preview.jpg"))
-    ap.add_argument("--anchor-x", type=float, default=0.5)
-    ap.add_argument("--anchor-y", type=float, default=0.44)
-    ap.add_argument("--zoom", type=float, default=1.0)
-    ap.add_argument("--rule-of-gaze", choices=["right", "left", "none"], default="right")
+    ap.add_argument("--anchor-x", type=float, default=None)
+    ap.add_argument("--anchor-y", type=float, default=None)
+    ap.add_argument("--zoom", type=float, default=None)
+    ap.add_argument("--rule-of-gaze", choices=["right", "left", "none"], default=None)
     ap.add_argument("--no-smart", action="store_true", help="désactive la détection de visage")
     ap.add_argument("--no-grade", action="store_true")
     ap.add_argument("--sharpen", type=float, default=1.0)
     args = ap.parse_args(argv)
+
+    # le preset fournit les valeurs par défaut, les options explicites gagnent
+    pre = dict(PRESETS[args.preset])
+    if args.anchor_x is None:
+        args.anchor_x = 0.5
+    if args.anchor_y is None:
+        args.anchor_y = pre["anchor_y"]
+    if args.zoom is None:
+        args.zoom = pre["zoom"]
+    if args.rule_of_gaze is None:
+        args.rule_of_gaze = pre["rule"]
+    if pre.get("no_smart"):
+        args.no_smart = True
+    print(f"cadrage : preset « {args.preset} » (zoom {args.zoom:.2f}, "
+          f"ancre y {args.anchor_y:.2f}, regard {args.rule_of_gaze})")
 
     im = Image.open(args.src)
     if im.mode in ("RGBA", "LA", "P"):
