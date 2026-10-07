@@ -34,10 +34,11 @@ les temps sont dans le dictionnaire `T`.
 ## Rendu
 
 ```bash
-# 1) déposer la photo officielle
-cp /chemin/photo-mme-fall.jpg assets/portrait.jpg
+# 1) préparer la photo (cadrage intelligent + étalonnage) -> assets/portrait_card.png
+python3 prepare_photo.py --src "/chemin/Mme FALL.png"
+#    options : --rule-of-gaze right|left|none, --zoom 1.15, --anchor-x/y, --no-grade
 
-# 2) rendu final (≈ 3 min 30 sur ce sandbox)
+# 2) rendu final (≈ 3 min 30 sur ce sandbox) — utilise automatiquement la carte préparée
 python3 render.py
 
 # options utiles

@@ -77,6 +77,17 @@ def ffmpeg_exe() -> str:
         return p
 
 
+def best_photo(explicit: str | None) -> str:
+    """Photo à utiliser : argument explicite, sinon carte préparée, sinon photo, sinon placeholder."""
+    if explicit:
+        return explicit
+    for cand in ("assets/portrait_card.png", "assets/portrait.jpg", "assets/portrait.png"):
+        p = os.path.join(ROOT, cand)
+        if os.path.exists(p):
+            return p
+    return os.path.join(ROOT, "assets", "placeholder_portrait.png")
+
+
 def load_photo(path: str, w: int, h: int, anchor_y: float = 0.34) -> np.ndarray:
     """Photo -> cover-crop (w,h) en float32 0..1. Aucune déformation du visage."""
     if not os.path.exists(path):
@@ -876,7 +887,9 @@ class Renderer:
 def main(argv=None):
     global FPS
     ap = argparse.ArgumentParser(description="Teaser motion design Bureau Rose")
-    ap.add_argument("--photo", default=os.path.join(ROOT, "assets", "portrait.jpg"))
+    ap.add_argument("--photo", default=None,
+                    help="photo du portrait (défaut : assets/portrait_card.png, sinon "
+                         "assets/portrait.jpg, sinon portrait de substitution)")
     ap.add_argument("--out", default=os.path.join(ROOT, "livrables",
                                                   "bureau-rose-teaser-9x16.mp4"))
     ap.add_argument("--scale", type=float, default=1.0, help="0.5 = rendu rapide de test")
@@ -915,7 +928,9 @@ def main(argv=None):
         else:
             print(f"[{now()}] ambiance sonore en cache ({wav})")
 
-    r = Renderer(args.photo, W, H)
+    photo = best_photo(args.photo)
+    print(f"[{now()}] photo : {os.path.relpath(photo, ROOT)}")
+    r = Renderer(photo, W, H)
     print(f"[{now()}] sprites prêts — rendu des images…")
 
     if args.dump:
